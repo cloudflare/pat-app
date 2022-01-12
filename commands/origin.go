@@ -26,6 +26,7 @@ var (
 	authorizationAttributeChallenge = "challenge"
 	authorizationAttributeMaxAge    = "max-age"
 	authorizationAttributeIssuerKey = "issuer-key"
+	authorizationAttributeNameKey   = "origin-name-key"
 
 	// Headers clients can send to control the types of token challenges sent
 	headerTokenAttributeNoninteractive = "Sec-Token-Attribute-Non-Interactive"
@@ -104,6 +105,7 @@ type TestOrigin struct {
 	originName       string
 	validationKeyEnc []byte // Encoding of validation public key
 	validationKey    *rsa.PublicKey
+	originNameKey    pat.PublicNameKey
 
 	// Map from challenge hash to list of outstanding challenges
 	challenges map[string][]TokenChallenge
@@ -164,7 +166,8 @@ func (o TestOrigin) handleRequest(w http.ResponseWriter, req *http.Request) {
 			challengeString := authorizationAttributeChallenge + "=" + o.CreateChallenge(req)
 			issuerKeyString := authorizationAttributeIssuerKey + "=" + base64.URLEncoding.EncodeToString(o.validationKeyEnc)
 			maxAgeString := authorizationAttributeMaxAge + "=" + "10"
-			challengeList = challengeList + privateTokenType + " " + challengeString + ", " + issuerKeyString + ", " + maxAgeString
+			originNameKeyString := authorizationAttributeNameKey + "=" + base64.URLEncoding.EncodeToString(o.originNameKey.Marshal())
+			challengeList = challengeList + privateTokenType + " " + challengeString + ", " + issuerKeyString + "," + originNameKeyString + ", " + maxAgeString
 		}
 
 		w.Header().Set("WWW-Authenticate", challengeList)
@@ -281,12 +284,21 @@ func startOrigin(c *cli.Context) error {
 	if err != nil {
 		return err
 	}
+	nameKeyURI, err := composeURL(issuer, issuerConfig.OriginNameKeyURI)
+	if err != nil {
+		return err
+	}
+	originNameKey, err := fetchIssuerNameKey(nameKeyURI)
+	if err != nil {
+		return err
+	}
 
 	log.Println("Token verification key:", hex.EncodeToString(publicKeyEnc))
 
 	origin := TestOrigin{
 		issuerName:       issuer,
 		originName:       name,
+		originNameKey:    originNameKey,
 		validationKeyEnc: publicKeyEnc,
 		validationKey:    publicKey,
 		challenges:       make(map[string][]TokenChallenge),
