@@ -25,7 +25,7 @@ var (
 	// WWW-Authenticate authorization challenge attributes
 	authorizationAttributeChallenge = "challenge"
 	authorizationAttributeMaxAge    = "max-age"
-	authorizationAttributeIssuerKey = "issuer-key"
+	authorizationAttributeTokenKey  = "token-key"
 	authorizationAttributeNameKey   = "origin-name-key"
 
 	// Headers clients can send to control the types of token challenges sent
@@ -164,7 +164,7 @@ func (o TestOrigin) handleRequest(w http.ResponseWriter, req *http.Request) {
 		challengeList := ""
 		for i := 0; i < count; i++ {
 			challengeString := authorizationAttributeChallenge + "=" + o.CreateChallenge(req)
-			issuerKeyString := authorizationAttributeIssuerKey + "=" + base64.URLEncoding.EncodeToString(o.validationKeyEnc)
+			issuerKeyString := authorizationAttributeTokenKey + "=" + base64.URLEncoding.EncodeToString(o.validationKeyEnc)
 			maxAgeString := authorizationAttributeMaxAge + "=" + "10"
 			originNameKeyString := authorizationAttributeNameKey + "=" + base64.URLEncoding.EncodeToString(o.originNameKey.Marshal())
 			challengeList = challengeList + privateTokenType + " " + challengeString + ", " + issuerKeyString + "," + originNameKeyString + ", " + maxAgeString

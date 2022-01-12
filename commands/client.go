@@ -272,6 +272,12 @@ func runClientFetch(c *cli.Context) error {
 	}
 	defer resp.Body.Close()
 
+	respEnc, err := httputil.DumpResponse(resp, false)
+	if err != nil {
+		return err
+	}
+	log.Println(string(respEnc))
+
 	if resp.StatusCode == http.StatusUnauthorized && resp.Header.Get("WWW-Authenticate") != "" {
 		authValue := resp.Header.Get("WWW-Authenticate")
 		if !strings.HasPrefix(authValue, privateTokenType) {
@@ -294,17 +300,17 @@ func runClientFetch(c *cli.Context) error {
 					key := strings.TrimSpace(kv[0])
 					value := kv[1]
 
-					if key == "challenge" {
+					if key == authorizationAttributeChallenge {
 						challengeBlob, err = base64.URLEncoding.DecodeString(value)
 						if err != nil {
 							return err
 						}
-					} else if key == "issuer-key" {
+					} else if key == authorizationAttributeTokenKey {
 						tokenKeyEnc, err = base64.URLEncoding.DecodeString(value)
 						if err != nil {
 							return err
 						}
-					} else if key == "max-age" {
+					} else if key == authorizationAttributeMaxAge {
 						// Ignore this attribute for now
 					} else {
 						log.Println("Unknown key:", key)
