@@ -162,7 +162,7 @@ func fetchToken(client pat.Client, clientOriginSecret []byte, clientID string, a
 		return pat.Token{}, err
 	}
 	q := req.URL.Query()
-	q.Add("issuerhost", u.Host)
+	q.Add("issuer", u.Host)
 	req.URL.RawQuery = q.Encode()
 	req.Header.Set("Content-Type", tokenRequestMediaType)
 

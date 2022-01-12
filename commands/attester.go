@@ -90,7 +90,7 @@ func (a TestAttester) handleAttestationRequest(w http.ResponseWriter, req *http.
 	}
 
 	// Read the target issuer
-	targetName := req.URL.Query().Get("issuerhost")
+	targetName := req.URL.Query().Get("issuer")
 	if targetName == "" {
 		log.Println("Issuer host missing")
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
