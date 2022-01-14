@@ -21,7 +21,7 @@ $ make secrets certs
 
 ### Configure /etc/hosts
 
-Append the following rules to the /etc/hosts file to ensure that queries for test issuer, origin, and attester are all resolve to localhost.
+Append the following rules to the /etc/hosts file to ensure that queries for test issuer, origin, and attester all resolve to localhost.
 
 ```
 127.0.0.1 issuer.example 
