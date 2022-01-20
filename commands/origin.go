@@ -119,23 +119,31 @@ func (o TestOrigin) CreateChallenge(req *http.Request) (string, string) {
 	rand.Reader.Read(nonce)
 	originName := o.originName
 
-	if req.Header.Get(headerTokenAttributeNoninteractive) != "" {
+	if req.Header.Get(headerTokenAttributeNoninteractive) != "" || req.URL.Query().Get("noninteractive") != "" {
 		// If the client requested a non-interactive token, then clear out the nonce slot
 		nonce = []byte{} // empty slice
 	}
-	if req.Header.Get(headerTokenAttributeCrossOrigin) != "" {
+	if req.Header.Get(headerTokenAttributeCrossOrigin) != "" || req.URL.Query().Get("crossorigin") != "" {
 		// If the client requested a cross-origin token, then clear out the origin slot
 		originName = ""
 	}
 
 	tokenKey := base64.URLEncoding.EncodeToString(o.validationKeyEnc)
 	tokenType := pat.RateLimitedTokenType // default
-	if req.Header.Get(headerTokenType) != "" {
+	if req.Header.Get(headerTokenType) != "" || req.URL.Query().Get("type") != "" {
 		tokenTypeValue, err := strconv.Atoi(req.Header.Get(headerTokenType))
 		if err == nil {
 			if tokenTypeValue == int(pat.BasicPublicTokenType) {
 				tokenType = pat.BasicPublicTokenType
 				tokenKey = base64.URLEncoding.EncodeToString(o.basicValidationKeyEnc)
+			}
+		} else {
+			tokenTypeValue, err = strconv.Atoi(req.URL.Query().Get("type"))
+			if err == nil {
+				if tokenTypeValue == int(pat.BasicPublicTokenType) {
+					tokenType = pat.BasicPublicTokenType
+					tokenKey = base64.URLEncoding.EncodeToString(o.basicValidationKeyEnc)
+				}
 			}
 		}
 	}
@@ -156,6 +164,7 @@ func (o TestOrigin) CreateChallenge(req *http.Request) (string, string) {
 		o.challenges[contextEnc] = make([]TokenChallenge, 0)
 	}
 	o.challenges[contextEnc] = append(o.challenges[contextEnc], challenge)
+	log.Println("Adding challenge context", contextEnc)
 
 	return base64.URLEncoding.EncodeToString(challengeEnc), tokenKey
 }
@@ -215,24 +224,31 @@ func (o TestOrigin) handleRequest(w http.ResponseWriter, req *http.Request) {
 	}
 
 	tokenContextEnc := hex.EncodeToString(token.Context)
-	_, ok := o.challenges[tokenContextEnc]
+	challengeList, ok := o.challenges[tokenContextEnc]
 	if !ok {
 		log.Println("No outstanding challenge matching context", tokenContextEnc)
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
-	// Consume the challenge
+	// Consume the first matching challenge
+	challenge := challengeList[0]
 	o.challenges[tokenContextEnc] = o.challenges[tokenContextEnc][1:]
+	log.Println("Consuming challenge context", tokenContextEnc)
+	log.Println("Remainder matching challenge set size", len(o.challenges[tokenContextEnc]))
 	if len(o.challenges[tokenContextEnc]) == 0 {
 		delete(o.challenges, tokenContextEnc)
 	}
 
 	authInput := token.AuthenticatorInput()
+	key := o.validationKey
+	if challenge.tokenType == pat.BasicPublicTokenType {
+		key = o.basicValidationKey
+	}
 
 	hash := sha512.New384()
 	hash.Write(authInput)
 	digest := hash.Sum(nil)
-	err = rsa.VerifyPSS(o.validationKey, crypto.SHA384, digest, token.Authenticator, &rsa.PSSOptions{
+	err = rsa.VerifyPSS(key, crypto.SHA384, digest, token.Authenticator, &rsa.PSSOptions{
 		Hash:       crypto.SHA384,
 		SaltLength: crypto.SHA384.Size(),
 	})

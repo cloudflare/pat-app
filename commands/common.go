@@ -27,7 +27,11 @@ func composeURL(host, uri string) (string, error) {
 	if u.IsAbs() {
 		return uri, nil
 	} else {
-		return "https://" + host + u.Path, nil
+		result := "https://" + host + u.Path
+		if u.RawQuery != "" {
+			result = result + "?" + u.RawQuery
+		}
+		return result, nil
 	}
 }
 
