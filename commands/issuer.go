@@ -4,12 +4,12 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"net/http/httputil"
 	"strconv"
 
 	pat "github.com/cloudflare/pat-go"
+	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 )
 
@@ -43,11 +43,11 @@ type TestIssuer struct {
 
 func (i TestIssuer) handleOriginKeyRequest(w http.ResponseWriter, req *http.Request) {
 	reqEnc, _ := httputil.DumpRequest(req, false)
-	log.Println("Handling origin key request:", string(reqEnc))
+	log.Debugln("Handling origin key request:", string(reqEnc))
 
 	origin := req.URL.Query().Get("origin")
 	if origin == "" {
-		log.Println("Returning basic issuance key")
+		log.Debugln("Returning basic issuance key")
 		tokenKeyEnc, err := marshalTokenKey(i.basicIssuer.TokenKey())
 		if err != nil {
 			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
@@ -59,7 +59,7 @@ func (i TestIssuer) handleOriginKeyRequest(w http.ResponseWriter, req *http.Requ
 		return
 	}
 
-	log.Println("Returning key for origin", origin)
+	log.Debugln("Returning key for origin", origin)
 	tokenKey := i.rateLimitedIssuer.OriginTokenKey(origin)
 	tokenKeyEnc, err := marshalTokenKey(tokenKey)
 	if err != nil {
@@ -73,7 +73,7 @@ func (i TestIssuer) handleOriginKeyRequest(w http.ResponseWriter, req *http.Requ
 
 func (i TestIssuer) handleNameKeyRequest(w http.ResponseWriter, req *http.Request) {
 	reqEnc, _ := httputil.DumpRequest(req, false)
-	log.Println("Handling HPKE config request:", string(reqEnc))
+	log.Debugln("Handling HPKE config request:", string(reqEnc))
 
 	w.Header().Set("Content-Type", "application/issuer-name-key")
 	w.Write(i.rateLimitedIssuer.NameKey().Marshal())
@@ -81,7 +81,7 @@ func (i TestIssuer) handleNameKeyRequest(w http.ResponseWriter, req *http.Reques
 
 func (i TestIssuer) handleConfigRequest(w http.ResponseWriter, req *http.Request) {
 	reqEnc, _ := httputil.DumpRequest(req, false)
-	log.Println("Handling config request:", string(reqEnc))
+	log.Debugln("Handling config request:", string(reqEnc))
 
 	resp := make(map[string]string)
 	resp["issuer-token-window"] = strconv.Itoa(defaultTokenPolicyWindow)
@@ -101,22 +101,22 @@ func (i TestIssuer) handleConfigRequest(w http.ResponseWriter, req *http.Request
 
 func (i TestIssuer) handleIssuanceRequest(w http.ResponseWriter, req *http.Request) {
 	reqEnc, _ := httputil.DumpRequest(req, false)
-	log.Println("Handling issuance request:", string(reqEnc))
+	log.Debugln("Handling issuance request:", string(reqEnc))
 
 	if req.Method != http.MethodPost {
-		log.Println("Invalid method")
+		log.Debugln("Invalid method")
 		http.Error(w, "Invalid method", 400)
 		return
 	}
 	if req.Header.Get("Content-Type") != tokenRequestMediaType {
-		log.Println("Invalid content type")
+		log.Debugln("Invalid content type")
 		http.Error(w, "Invalid Content-Type", 400)
 		return
 	}
 
 	body, err := ioutil.ReadAll(req.Body)
 	if err != nil {
-		log.Println("Failed reading request body")
+		log.Debugln("Failed reading request body")
 		http.Error(w, err.Error(), 400)
 		return
 	}
@@ -125,14 +125,14 @@ func (i TestIssuer) handleIssuanceRequest(w http.ResponseWriter, req *http.Reque
 	if tokenType == pat.RateLimitedTokenType {
 		var tokenRequest pat.RateLimitedTokenRequest
 		if !tokenRequest.Unmarshal(body) {
-			log.Println("Failed decoding token request")
+			log.Debugln("Failed decoding token request")
 			http.Error(w, "Failed decoding token request", 400)
 			return
 		}
 
 		blindSignature, blindRequest, err := i.rateLimitedIssuer.EvaluateWithoutCheck(&tokenRequest)
 		if err != nil {
-			log.Println("Token evaluation failed:", err)
+			log.Debugln("Token evaluation failed:", err)
 			http.Error(w, "Token evaluation failed", 400)
 			return
 		}
@@ -144,14 +144,14 @@ func (i TestIssuer) handleIssuanceRequest(w http.ResponseWriter, req *http.Reque
 	} else if tokenType == pat.BasicPublicTokenType {
 		var tokenRequest pat.BasicPublicTokenRequest
 		if !tokenRequest.Unmarshal(body) {
-			log.Println("Failed decoding token request")
+			log.Debugln("Failed decoding token request")
 			http.Error(w, "Failed decoding token request", 400)
 			return
 		}
 
 		blindSignature, err := i.basicIssuer.Evaluate(&tokenRequest)
 		if err != nil {
-			log.Println("Token evaluation failed:", err)
+			log.Debugln("Token evaluation failed:", err)
 			http.Error(w, "Token evaluation failed", 400)
 			return
 		}

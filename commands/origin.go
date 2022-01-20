@@ -10,13 +10,13 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"net/http/httputil"
 	"strconv"
 	"strings"
 
 	pat "github.com/cloudflare/pat-go"
+	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 	"golang.org/x/crypto/cryptobyte"
 )
@@ -164,18 +164,18 @@ func (o TestOrigin) CreateChallenge(req *http.Request) (string, string) {
 		o.challenges[contextEnc] = make([]TokenChallenge, 0)
 	}
 	o.challenges[contextEnc] = append(o.challenges[contextEnc], challenge)
-	log.Println("Adding challenge context", contextEnc)
+	log.Debugln("Adding challenge context", contextEnc)
 
 	return base64.URLEncoding.EncodeToString(challengeEnc), tokenKey
 }
 
 func (o TestOrigin) handleRequest(w http.ResponseWriter, req *http.Request) {
 	reqEnc, _ := httputil.DumpRequest(req, false)
-	log.Println("Handling request:", string(reqEnc))
+	log.Debugln("Handling request:", string(reqEnc))
 
 	// If the Authorization header is empty, challenge the client for a token
 	if req.Header.Get("Authorization") == "" {
-		log.Println("Missing authorization header. Replying with challenge.")
+		log.Debugln("Missing authorization header. Replying with challenge.")
 
 		count := 1
 		if countReq := req.Header.Get(headerTokenAttributeChallengeCount); countReq != "" {
@@ -203,7 +203,7 @@ func (o TestOrigin) handleRequest(w http.ResponseWriter, req *http.Request) {
 	authValue := req.Header.Get("Authorization")
 	tokenPrefix := privateTokenType + " " + "token="
 	if !strings.HasPrefix(authValue, tokenPrefix) {
-		log.Println("Authorization header missing 'PrivateToken token=' prefix")
+		log.Debugln("Authorization header missing 'PrivateToken token=' prefix")
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
@@ -211,14 +211,14 @@ func (o TestOrigin) handleRequest(w http.ResponseWriter, req *http.Request) {
 	tokenValueEnc := strings.SplitAfter(authValue, tokenPrefix)[1] // XXX(caw): there's probably a better way to parse this out
 	tokenValue, err := base64.URLEncoding.DecodeString(tokenValueEnc)
 	if err != nil {
-		log.Println("Failed reading Authorization header token value")
+		log.Debugln("Failed reading Authorization header token value")
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
 
 	token, err := pat.UnmarshalToken(tokenValue)
 	if err != nil {
-		log.Println("Failed decoding Token")
+		log.Debugln("Failed decoding Token")
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
@@ -226,15 +226,15 @@ func (o TestOrigin) handleRequest(w http.ResponseWriter, req *http.Request) {
 	tokenContextEnc := hex.EncodeToString(token.Context)
 	challengeList, ok := o.challenges[tokenContextEnc]
 	if !ok {
-		log.Println("No outstanding challenge matching context", tokenContextEnc)
+		log.Debugln("No outstanding challenge matching context", tokenContextEnc)
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
 	// Consume the first matching challenge
 	challenge := challengeList[0]
 	o.challenges[tokenContextEnc] = o.challenges[tokenContextEnc][1:]
-	log.Println("Consuming challenge context", tokenContextEnc)
-	log.Println("Remainder matching challenge set size", len(o.challenges[tokenContextEnc]))
+	log.Debugln("Consuming challenge context", tokenContextEnc)
+	log.Debugln("Remainder matching challenge set size", len(o.challenges[tokenContextEnc]))
 	if len(o.challenges[tokenContextEnc]) == 0 {
 		delete(o.challenges, tokenContextEnc)
 	}
@@ -254,7 +254,7 @@ func (o TestOrigin) handleRequest(w http.ResponseWriter, req *http.Request) {
 	})
 	if err != nil {
 		// Token validation failed
-		log.Println("Token validation failed", err)
+		log.Debugln("Token validation failed", err)
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
@@ -262,14 +262,14 @@ func (o TestOrigin) handleRequest(w http.ResponseWriter, req *http.Request) {
 	httpClient := &http.Client{}
 	resourceReq, err := http.NewRequest(http.MethodGet, testResource, nil)
 	if err != nil {
-		log.Println(err.Error())
+		log.Debugln(err.Error())
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	resourceReq.Header.Add("Authorization", "PrivateToken token="+base64.URLEncoding.EncodeToString(token.Marshal()))
 	resp, err := httpClient.Do(resourceReq)
 	if err != nil {
-		log.Println(err.Error())
+		log.Debugln(err.Error())
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -278,7 +278,7 @@ func (o TestOrigin) handleRequest(w http.ResponseWriter, req *http.Request) {
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		log.Println(err.Error())
+		log.Debugln(err.Error())
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -331,7 +331,7 @@ func startOrigin(c *cli.Context) error {
 		return err
 	}
 
-	log.Println("Token verification key:", hex.EncodeToString(publicKeyEnc))
+	log.Debugln("Token verification key:", hex.EncodeToString(publicKeyEnc))
 
 	origin := TestOrigin{
 		issuerName:            issuer,

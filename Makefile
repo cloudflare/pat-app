@@ -34,6 +34,6 @@ install:
 
 package:
 	@tar -czf /tmp/pat-app.tar.gz .
-	@cp /tmp/pat-app.tar.gz .
+	@mv /tmp/pat-app.tar.gz .
 
 .PHONY: all clean build install

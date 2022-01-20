@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -21,6 +20,7 @@ import (
 	"strings"
 
 	"github.com/cloudflare/pat-go"
+	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 	"golang.org/x/crypto/hkdf"
 )
@@ -153,7 +153,7 @@ func fetchBasicToken(client pat.BasicPublicClient, attester string, challenge []
 	req.Header.Set("Content-Type", tokenRequestMediaType)
 
 	reqEnc, _ := httputil.DumpRequest(req, false)
-	log.Println("Token request:", string(reqEnc))
+	log.Debugln("Token request:", string(reqEnc))
 
 	httpClient := &http.Client{}
 	resp, err := httpClient.Do(req)
@@ -166,7 +166,7 @@ func fetchBasicToken(client pat.BasicPublicClient, attester string, challenge []
 	defer resp.Body.Close()
 
 	tokenRespEnc, _ := httputil.DumpResponse(resp, false)
-	log.Println("Token response:", string(tokenRespEnc))
+	log.Debugln("Token response:", string(tokenRespEnc))
 
 	tokenResponse, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
@@ -246,7 +246,7 @@ func fetchRateLimitedToken(client pat.RateLimitedClient, clientOriginSecret []by
 	}
 
 	reqEnc, _ := httputil.DumpRequest(req, false)
-	log.Println("Token request:", string(reqEnc))
+	log.Debugln("Token request:", string(reqEnc))
 
 	httpClient := &http.Client{}
 	resp, err := httpClient.Do(req)
@@ -259,7 +259,7 @@ func fetchRateLimitedToken(client pat.RateLimitedClient, clientOriginSecret []by
 	defer resp.Body.Close()
 
 	tokenRespEnc, _ := httputil.DumpResponse(resp, false)
-	log.Println("Token response:", string(tokenRespEnc))
+	log.Debugln("Token response:", string(tokenRespEnc))
 
 	tokenResponse, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
@@ -312,7 +312,7 @@ func runClientFetch(c *cli.Context) error {
 	tokenStore := EmptyStore()
 	if store != "" {
 		if _, err = os.Stat(store); err == nil {
-			log.Println("Reading TokenStore from", store)
+			log.Debugln("Reading TokenStore from", store)
 			tokenStore, err = ReadStoreFromFile(store)
 			if err != nil {
 				log.Fatal("Failed reading TokenStore from file ", store, ":", err)
@@ -356,7 +356,7 @@ func runClientFetch(c *cli.Context) error {
 	if err != nil {
 		return err
 	}
-	log.Println(string(respEnc))
+	log.Debugln(string(respEnc))
 
 	if resp.StatusCode == http.StatusUnauthorized && resp.Header.Get("WWW-Authenticate") != "" {
 		authValue := resp.Header.Get("WWW-Authenticate")
@@ -368,12 +368,12 @@ func runClientFetch(c *cli.Context) error {
 		var challengeBlob []byte
 		var tokenKeyEnc []byte
 
-		log.Println("Challenged:", authValue)
+		log.Debugln("Challenged:", authValue)
 		challenges := strings.Split(authValue, privateTokenType)
 		tokenChallenges := make([]string, 0)
 		for _, challenge := range challenges {
 			if len(challenge) > 0 {
-				log.Println("Processing PrivateToken challenge:", challenge)
+				log.Debugln("Processing PrivateToken challenge:", challenge)
 				attributes := strings.Split(challenge, ",")
 				for _, attribute := range attributes {
 					kv := strings.SplitN(attribute, "=", 2)
@@ -393,7 +393,7 @@ func runClientFetch(c *cli.Context) error {
 					} else if key == authorizationAttributeMaxAge {
 						// Ignore this attribute for now
 					} else {
-						log.Println("Unknown key:", key)
+						log.Debugln("Unknown key:", key)
 					}
 				}
 
@@ -403,31 +403,31 @@ func runClientFetch(c *cli.Context) error {
 
 				tokenType := binary.BigEndian.Uint16(challengeBlob)
 				if tokenType == pat.RateLimitedTokenType {
-					log.Println("Fetching rate-limited token...")
+					log.Debugln("Fetching rate-limited token...")
 					token, err := fetchRateLimitedToken(rateLimitedClient, clientOriginSecret, id, attester, origin, challengeBlob, tokenKeyEnc)
 					if err != nil {
 						return err
 					}
 
-					log.Printf("Adding token for challenge %s to the store\n", challengeEnc)
+					log.Debugf("Adding token for challenge %s to the store\n", challengeEnc)
 					tokenStore.AddToken(challengeEnc, token)
-					log.Println("TokenStore contents:", tokenStore.String())
+					log.Debugln("TokenStore contents:", tokenStore.String())
 				} else {
-					log.Println("Fetching basic token...")
+					log.Debugln("Fetching basic token...")
 					token, err := fetchBasicToken(basicClient, attester, challengeBlob, tokenKeyEnc)
 					if err != nil {
 						return err
 					}
 
-					log.Printf("Adding token for challenge %s to the store\n", challengeEnc)
+					log.Debugf("Adding token for challenge %s to the store\n", challengeEnc)
 					tokenStore.AddToken(challengeEnc, token)
-					log.Println("TokenStore contents:", tokenStore.String())
+					log.Debugln("TokenStore contents:", tokenStore.String())
 				}
 			}
 		}
 
 		// Retry the request with a fresh token using the first matching challenge
-		log.Printf("Consuming token for challenge %s from the store\n", tokenChallenges[0])
+		log.Debugf("Consuming token for challenge %s from the store\n", tokenChallenges[0])
 		token, err := tokenStore.ConsumeToken(tokenChallenges[0])
 		if err != nil {
 			return err
@@ -453,7 +453,7 @@ func runClientFetch(c *cli.Context) error {
 		fmt.Println(string(body))
 
 		if store != "" {
-			log.Println("Writing TokenStore to", store)
+			log.Debugln("Writing TokenStore to", store)
 			err = tokenStore.WriteToFile(store)
 			if err != nil {
 				log.Fatal(err)

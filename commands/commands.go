@@ -131,4 +131,33 @@ var Commands = []cli.Command{
 			},
 		},
 	},
+	{
+		Name:   "test",
+		Usage:  "Run through test cases for all possible token challenges",
+		Action: runRunner,
+		Flags: []cli.Flag{
+			cli.StringFlag{
+				Name:  "id",
+				Value: "default",
+			},
+			cli.StringFlag{
+				Name:     "origin",
+				Value:    "",
+				Required: true,
+			},
+			cli.StringFlag{
+				Name:  "secret",
+				Value: "",
+			},
+			cli.StringFlag{
+				Name:     "attester",
+				Value:    "",
+				Required: true,
+			},
+			cli.StringFlag{
+				Name:  "resource",
+				Value: "/index.html",
+			},
+		},
+	},
 }
