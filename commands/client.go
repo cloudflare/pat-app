@@ -6,6 +6,7 @@ import (
 	"crypto/rsa"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -25,7 +26,7 @@ import (
 )
 
 func fetchIssuerConfig(issuer string) (IssuerConfig, error) {
-	resp, err := http.Get("https://" + issuer + "/.well-known/config")
+	resp, err := http.Get("https://" + issuer + issuerConfigURI)
 	if err != nil {
 		return IssuerConfig{}, err
 	}
@@ -71,7 +72,9 @@ func fetchOriginTokenKey(tokenKeyURI, origin string) ([]byte, *rsa.PublicKey, er
 		return nil, nil, err
 	}
 	q := req.URL.Query()
-	q.Add("origin", origin)
+	if origin != "" {
+		q.Add("origin", origin)
+	}
 	req.URL.RawQuery = q.Encode()
 
 	httpClient := &http.Client{}
@@ -104,7 +107,76 @@ func computeAnonymousOrigin(secret []byte, origin string) ([]byte, error) {
 	return originID, err
 }
 
-func fetchToken(client pat.Client, clientOriginSecret []byte, clientID string, attester string, origin string, challenge []byte, publicKeyEnc []byte) (pat.Token, error) {
+func fetchBasicToken(client pat.BasicPublicClient, attester string, challenge []byte, publicKeyEnc []byte) (pat.Token, error) {
+	nonce := make([]byte, 32)
+	rand.Reader.Read(nonce)
+
+	tokenKeyID := sha256.Sum256(publicKeyEnc)
+	publicKey, err := unmarshalTokenKey(publicKeyEnc)
+	if err != nil {
+		return pat.Token{}, err
+	}
+
+	tokenChallenge, err := UnmarshalTokenChallenge(challenge)
+	if err != nil {
+		return pat.Token{}, err
+	}
+
+	issuerConfig, err := fetchIssuerConfig(tokenChallenge.issuerName)
+	if err != nil {
+		return pat.Token{}, err
+	}
+
+	tokenRequestState, err := client.CreateTokenRequest(challenge, nonce, tokenKeyID[:], publicKey)
+	if err != nil {
+		return pat.Token{}, err
+	}
+	tokenRequestEnc := tokenRequestState.Request().Marshal()
+
+	u, err := url.Parse("https://" + tokenChallenge.issuerName + issuerConfig.RequestURI)
+	if err != nil {
+		return pat.Token{}, err
+	}
+
+	tokenRequestURI, err := composeURL(attester, "/token-request")
+	if err != nil {
+		return pat.Token{}, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, tokenRequestURI, bytes.NewBuffer(tokenRequestEnc))
+	if err != nil {
+		return pat.Token{}, err
+	}
+	q := req.URL.Query()
+	q.Add("issuer", u.Host)
+	req.URL.RawQuery = q.Encode()
+	req.Header.Set("Content-Type", tokenRequestMediaType)
+
+	reqEnc, _ := httputil.DumpRequest(req, false)
+	log.Println("Token request:", string(reqEnc))
+
+	httpClient := &http.Client{}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return pat.Token{}, err
+	}
+	if resp.StatusCode != 200 {
+		return pat.Token{}, fmt.Errorf("Request failed with error %d", resp.StatusCode)
+	}
+	defer resp.Body.Close()
+
+	tokenRespEnc, _ := httputil.DumpResponse(resp, false)
+	log.Println("Token response:", string(tokenRespEnc))
+
+	tokenResponse, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return pat.Token{}, err
+	}
+
+	return tokenRequestState.FinalizeToken(tokenResponse)
+}
+
+func fetchRateLimitedToken(client pat.RateLimitedClient, clientOriginSecret []byte, clientID string, attester string, origin string, challenge []byte, publicKeyEnc []byte) (pat.Token, error) {
 	blind := make([]byte, 32)
 	rand.Reader.Read(blind)
 
@@ -198,11 +270,12 @@ func fetchToken(client pat.Client, clientOriginSecret []byte, clientID string, a
 }
 
 func runClientFetch(c *cli.Context) error {
-	origin := c.String("origin")     // localhost:4567
-	resource := c.String("resource") // "/index.html"
-	secret := c.String("secret")     // 32 random bytes
-	attester := c.String("attester") // attester.example:4569
-	store := c.String("store")       // token_store.json
+	origin := c.String("origin")        // localhost:4567
+	resource := c.String("resource")    // "/index.html"
+	secret := c.String("secret")        // 32 random bytes
+	attester := c.String("attester")    // attester.example:4569
+	store := c.String("store")          // token_store.json
+	tokenType := c.String("token-type") // "basic" or "rate-limited"
 	nonInteractive := c.Bool("non-interactive")
 	crossOrigin := c.Bool("cross-origin")
 	tokenCount := c.Int("count")
@@ -247,7 +320,8 @@ func runClientFetch(c *cli.Context) error {
 		}
 	}
 
-	client := pat.CreateClientFromSecret(clientRequestSecret)
+	rateLimitedClient := pat.CreateRateLimitedClientFromSecret(clientRequestSecret)
+	basicClient := pat.NewBasicPublicClient()
 
 	resourceURI, err := composeURL(origin, resource)
 	if err != nil {
@@ -264,6 +338,12 @@ func runClientFetch(c *cli.Context) error {
 	}
 	if crossOrigin {
 		req.Header.Add(headerTokenAttributeCrossOrigin, "true")
+	}
+	if tokenType == "basic" {
+		req.Header.Add(headerTokenType, strconv.Itoa(int(pat.BasicPublicTokenType)))
+	}
+	if tokenType == "rate-limited" {
+		req.Header.Add(headerTokenType, strconv.Itoa(int(pat.RateLimitedTokenType)))
 	}
 	req.Header.Add(headerTokenAttributeChallengeCount, strconv.Itoa(tokenCount))
 	resp, err := httpClient.Do(req)
@@ -321,14 +401,28 @@ func runClientFetch(c *cli.Context) error {
 				challengeEnc := hex.EncodeToString(challenge[:])
 				tokenChallenges = append(tokenChallenges, challengeEnc)
 
-				token, err := fetchToken(client, clientOriginSecret, id, attester, origin, challengeBlob, tokenKeyEnc)
-				if err != nil {
-					return err
-				}
+				tokenType := binary.BigEndian.Uint16(challengeBlob)
+				if tokenType == pat.RateLimitedTokenType {
+					log.Println("Fetching rate-limited token...")
+					token, err := fetchRateLimitedToken(rateLimitedClient, clientOriginSecret, id, attester, origin, challengeBlob, tokenKeyEnc)
+					if err != nil {
+						return err
+					}
 
-				log.Printf("Adding token for challenge %s to the store\n", challengeEnc)
-				tokenStore.AddToken(challengeEnc, token)
-				log.Println("TokenStore contents:", tokenStore.String())
+					log.Printf("Adding token for challenge %s to the store\n", challengeEnc)
+					tokenStore.AddToken(challengeEnc, token)
+					log.Println("TokenStore contents:", tokenStore.String())
+				} else {
+					log.Println("Fetching basic token...")
+					token, err := fetchBasicToken(basicClient, attester, challengeBlob, tokenKeyEnc)
+					if err != nil {
+						return err
+					}
+
+					log.Printf("Adding token for challenge %s to the store\n", challengeEnc)
+					tokenStore.AddToken(challengeEnc, token)
+					log.Println("TokenStore contents:", tokenStore.String())
+				}
 			}
 		}
 

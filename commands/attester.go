@@ -2,6 +2,7 @@ package commands
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"io/ioutil"
@@ -64,31 +65,6 @@ func (a TestAttester) handleAttestationRequest(w http.ResponseWriter, req *http.
 		return
 	}
 
-	// Parse sf-binary headers
-	anonOrigin, err := parseStructuredBinaryHeader(req, headerTokenOrigin)
-	if err != nil {
-		log.Println(err)
-		http.Error(w, err.Error(), 400)
-		return
-	}
-	clientOriginKey, err := parseStructuredBinaryHeader(req, headerClientOriginKey)
-	if err != nil {
-		log.Println(err)
-		http.Error(w, err.Error(), 400)
-		return
-	}
-	requestBlind, err := parseStructuredBinaryHeader(req, headerRequestBlind)
-	if err != nil {
-		log.Println(err)
-		http.Error(w, err.Error(), 400)
-		return
-	}
-	var clientID string
-	clientID = req.Header.Get(headerClientID)
-	if clientID == "" {
-		clientID = "default"
-	}
-
 	// Read the target issuer
 	targetName := req.URL.Query().Get("issuer")
 	if targetName == "" {
@@ -102,19 +78,6 @@ func (a TestAttester) handleAttestationRequest(w http.ResponseWriter, req *http.
 	if err != nil {
 		log.Println("Failed reading client request body:", err)
 		http.Error(w, err.Error(), 400)
-		return
-	}
-
-	clientTokenReq, err := pat.UnmarshalTokenRequest(requestBody)
-	if err != nil {
-		log.Println("Failed parsing client TokenRequest", err)
-		http.Error(w, err.Error(), 400)
-		return
-	}
-
-	if clientTokenReq.Type() != patTokenType {
-		log.Println("Unsupported token request type")
-		http.Error(w, "Unsupported token request type", 400)
 		return
 	}
 
@@ -136,101 +99,162 @@ func (a TestAttester) handleAttestationRequest(w http.ResponseWriter, req *http.
 	}
 	tokenReq.Header.Set("Content-Type", tokenRequestMediaType)
 
-	tokenReqEnc, _ := httputil.DumpRequest(tokenReq, false)
-	log.Println("Forwarding attestation token request:", string(tokenReqEnc))
-
-	resp, err := a.client.Do(tokenReq)
-	if err != nil {
-		log.Println("Forwarded request failed:", err)
-		http.Error(w, err.Error(), 400)
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.Header.Get(headerTokenLimit) == "" {
-		log.Println("Response missing " + headerTokenLimit + " header")
-		http.Error(w, "Response missing "+headerTokenLimit+" header", 400) // XXX(caw): fix this response code
-		return
-	}
-	tokenLimit, err := strconv.Atoi(resp.Header.Get(headerTokenLimit))
-	if err != nil {
-		log.Println("Invalid " + headerTokenLimit + " header")
-		http.Error(w, "Invalid "+headerTokenLimit+" header", 400) // XXX(caw): fix this response code
-		return
-	}
-
-	tokenRespEnc, _ := httputil.DumpResponse(resp, false)
-	log.Println("Attestation token response:", string(tokenRespEnc))
-
-	blindSignature, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		http.Error(w, err.Error(), 400)
-		return
-	}
-
-	blindedRequestKey, err := unmarshalStructuredBinary(resp.Header.Get(headerTokenOrigin))
-	if err != nil {
-		log.Println("Invalid "+headerTokenOrigin+" header:", err)
-		http.Error(w, "Invalid "+headerTokenOrigin+" header", 400)
-		return
-	}
-
-	index, err := pat.FinalizeIndex(clientOriginKey, requestBlind, blindedRequestKey)
-	if err != nil {
-		log.Println("Index computation failed:", err)
-		http.Error(w, "Index computation failed", 400)
-		return
-	}
-	indexEnc := hex.EncodeToString(index)
-
-	anonOriginEnc := hex.EncodeToString(anonOrigin)
-	state, ok := a.clientState[clientID]
-	if !ok {
-		log.Println("Initializing new state for client", clientID)
-
-		// No client state for this client, so initialize it
-		originIndices := make(map[string]string)
-		originIndices[anonOriginEnc] = indexEnc
-		originCounts := make(map[string]int)
-		originCounts[anonOriginEnc] = 1
-		a.clientState[clientID] = ClientState{
-			originIndices: originIndices,
-			originCounts:  originCounts,
+	tokenType := binary.BigEndian.Uint16(requestBody)
+	if tokenType == pat.RateLimitedTokenType {
+		var rateLimitedTokenRequest pat.RateLimitedTokenRequest
+		if !rateLimitedTokenRequest.Unmarshal(requestBody) {
+			log.Println("Failed parsing client TokenRequest", err)
+			http.Error(w, "Failed parsing client TokenRequest", 400)
+			return
 		}
-	} else {
-		log.Println("Updating state for client", clientID)
-		oldIndexEnc, ok := state.originIndices[anonOriginEnc]
+
+		// Parse sf-binary headers
+		anonOrigin, err := parseStructuredBinaryHeader(req, headerTokenOrigin)
+		if err != nil {
+			log.Println("parseStructuredBinaryHeader failed:", err)
+			http.Error(w, err.Error(), 400)
+			return
+		}
+		clientOriginKey, err := parseStructuredBinaryHeader(req, headerClientOriginKey)
+		if err != nil {
+			log.Println("parseStructuredBinaryHeader failed:", err)
+			http.Error(w, err.Error(), 400)
+			return
+		}
+		requestBlind, err := parseStructuredBinaryHeader(req, headerRequestBlind)
+		if err != nil {
+			log.Println("parseStructuredBinaryHeader failed:", err)
+			http.Error(w, err.Error(), 400)
+			return
+		}
+		var clientID string
+		clientID = req.Header.Get(headerClientID)
+		if clientID == "" {
+			clientID = "default"
+		}
+
+		// XXX(caw): verify the token request signature and that it's valid
+		// XXX(caw): make sure the blinded public key is valid for the given client
+
+		tokenReqEnc, _ := httputil.DumpRequest(tokenReq, false)
+		log.Println("Forwarding attestation token request:", string(tokenReqEnc))
+
+		resp, err := a.client.Do(tokenReq)
+		if err != nil {
+			log.Println("Forwarded request failed:", err)
+			http.Error(w, err.Error(), 400)
+			return
+		}
+		defer resp.Body.Close()
+
+		if resp.Header.Get(headerTokenLimit) == "" {
+			log.Println("Response missing " + headerTokenLimit + " header")
+			http.Error(w, "Response missing "+headerTokenLimit+" header", 400) // XXX(caw): fix this response code
+			return
+		}
+		tokenLimit, err := strconv.Atoi(resp.Header.Get(headerTokenLimit))
+		if err != nil {
+			log.Println("Invalid " + headerTokenLimit + " header")
+			http.Error(w, "Invalid "+headerTokenLimit+" header", 400) // XXX(caw): fix this response code
+			return
+		}
+
+		tokenRespEnc, _ := httputil.DumpResponse(resp, false)
+		log.Println("Attestation token response:", string(tokenRespEnc))
+
+		blindSignature, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			http.Error(w, err.Error(), 400)
+			return
+		}
+
+		blindedRequestKey, err := unmarshalStructuredBinary(resp.Header.Get(headerTokenOrigin))
+		if err != nil {
+			log.Println("Invalid "+headerTokenOrigin+" header:", err)
+			http.Error(w, "Invalid "+headerTokenOrigin+" header", 400)
+			return
+		}
+
+		index, err := pat.FinalizeIndex(clientOriginKey, requestBlind, blindedRequestKey)
+		if err != nil {
+			log.Println("Index computation failed:", err)
+			http.Error(w, "Index computation failed", 400)
+			return
+		}
+		indexEnc := hex.EncodeToString(index)
+
+		anonOriginEnc := hex.EncodeToString(anonOrigin)
+		state, ok := a.clientState[clientID]
 		if !ok {
-			log.Println("Recording new origin for client", clientID)
+			log.Println("Initializing new state for client", clientID)
 
-			// This is a newly visited origin, so initialize it as such
-			state.originIndices[anonOriginEnc] = indexEnc
-			state.originCounts[anonOriginEnc] = 1
+			// No client state for this client, so initialize it
+			originIndices := make(map[string]string)
+			originIndices[anonOriginEnc] = indexEnc
+			originCounts := make(map[string]int)
+			originCounts[anonOriginEnc] = 1
+			a.clientState[clientID] = ClientState{
+				originIndices: originIndices,
+				originCounts:  originCounts,
+			}
 		} else {
-			log.Println("Updating existing origin for client", clientID)
+			log.Println("Updating state for client", clientID)
+			oldIndexEnc, ok := state.originIndices[anonOriginEnc]
+			if !ok {
+				log.Println("Recording new origin for client", clientID)
 
-			// Check for index stability
-			if oldIndexEnc != indexEnc {
-				if err != nil {
-					log.Println("Index mismatch for client", clientID)
-					http.Error(w, "Invalid mapping, aborting", 400)
-					return
-				}
+				// This is a newly visited origin, so initialize it as such
+				state.originIndices[anonOriginEnc] = indexEnc
+				state.originCounts[anonOriginEnc] = 1
 			} else {
-				log.Println("Incrementing index count for client", clientID)
-				state.originCounts[indexEnc] = state.originCounts[indexEnc] + 1
+				log.Println("Updating existing origin for client", clientID)
 
-				if state.originCounts[indexEnc] >= tokenLimit {
-					log.Println("Limit", tokenLimit, "exceeded")
-					http.Error(w, "Limit exceeded", http.StatusTooManyRequests)
-					return
+				// Check for index stability
+				if oldIndexEnc != indexEnc {
+					if err != nil {
+						log.Println("Index mismatch for client", clientID)
+						http.Error(w, "Invalid mapping, aborting", 400)
+						return
+					}
+				} else {
+					log.Println("Incrementing index count for client", clientID)
+					state.originCounts[indexEnc] = state.originCounts[indexEnc] + 1
+
+					if state.originCounts[indexEnc] >= tokenLimit {
+						log.Println("Limit", tokenLimit, "exceeded")
+						http.Error(w, "Limit exceeded", http.StatusTooManyRequests)
+						return
+					}
 				}
 			}
 		}
-	}
 
-	w.Header().Set("content-type", tokenResponseMediaType)
-	w.Write(blindSignature)
+		w.Header().Set("content-type", tokenResponseMediaType)
+		w.Write(blindSignature)
+	} else if tokenType == pat.BasicPublicTokenType {
+		tokenReqEnc, _ := httputil.DumpRequest(tokenReq, false)
+		log.Println("Forwarding attestation token request:", string(tokenReqEnc))
+
+		resp, err := a.client.Do(tokenReq)
+		if err != nil {
+			log.Println("Forwarded request failed:", err)
+			http.Error(w, err.Error(), 400)
+			return
+		}
+		defer resp.Body.Close()
+
+		tokenRespEnc, _ := httputil.DumpResponse(resp, false)
+		log.Println("Attestation token response:", string(tokenRespEnc))
+
+		blindSignature, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			http.Error(w, err.Error(), 400)
+			return
+		}
+
+		w.Header().Set("content-type", tokenResponseMediaType)
+		w.Write(blindSignature)
+	}
 }
 
 func startAttester(c *cli.Context) error {

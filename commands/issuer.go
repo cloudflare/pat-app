@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"io/ioutil"
 	"log"
@@ -19,7 +20,7 @@ var (
 
 	// API URIs
 	tokenRequestURI           = "/token-request"
-	issuerConfigURI           = "/.well-known/config"
+	issuerConfigURI           = "/.well-known/token-issuer-directory"
 	issuerNameKeyURI          = "/name-key"
 	issuerOriginRequestKeyURI = "/origin-token-key"
 
@@ -36,7 +37,8 @@ type IssuerConfig struct {
 }
 
 type TestIssuer struct {
-	issuer *pat.Issuer
+	rateLimitedIssuer *pat.RateLimitedIssuer
+	basicIssuer       *pat.BasicPublicIssuer
 }
 
 func (i TestIssuer) handleOriginKeyRequest(w http.ResponseWriter, req *http.Request) {
@@ -45,13 +47,20 @@ func (i TestIssuer) handleOriginKeyRequest(w http.ResponseWriter, req *http.Requ
 
 	origin := req.URL.Query().Get("origin")
 	if origin == "" {
-		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		log.Println("Returning basic issuance key")
+		tokenKeyEnc, err := marshalTokenKey(i.basicIssuer.TokenKey())
+		if err != nil {
+			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/rsa-blind-signature-key") // XXX(caw): what content type should we use?
+		w.Write(tokenKeyEnc)
 		return
 	}
 
 	log.Println("Returning key for origin", origin)
-
-	tokenKey := i.issuer.OriginTokenKey(origin)
+	tokenKey := i.rateLimitedIssuer.OriginTokenKey(origin)
 	tokenKeyEnc, err := marshalTokenKey(tokenKey)
 	if err != nil {
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
@@ -67,7 +76,7 @@ func (i TestIssuer) handleNameKeyRequest(w http.ResponseWriter, req *http.Reques
 	log.Println("Handling HPKE config request:", string(reqEnc))
 
 	w.Header().Set("Content-Type", "application/issuer-name-key")
-	w.Write(i.issuer.NameKey().Marshal())
+	w.Write(i.rateLimitedIssuer.NameKey().Marshal())
 }
 
 func (i TestIssuer) handleConfigRequest(w http.ResponseWriter, req *http.Request) {
@@ -112,24 +121,44 @@ func (i TestIssuer) handleIssuanceRequest(w http.ResponseWriter, req *http.Reque
 		return
 	}
 
-	tokenReq, err := pat.UnmarshalTokenRequest(body)
-	if err != nil {
-		log.Println("Failed decoding token request")
-		http.Error(w, err.Error(), 400)
-		return
-	}
+	tokenType := binary.BigEndian.Uint16(body)
+	if tokenType == pat.RateLimitedTokenType {
+		var tokenRequest pat.RateLimitedTokenRequest
+		if !tokenRequest.Unmarshal(body) {
+			log.Println("Failed decoding token request")
+			http.Error(w, "Failed decoding token request", 400)
+			return
+		}
 
-	blindSignature, blindRequest, err := i.issuer.Evaluate(tokenReq)
-	if err != nil {
-		log.Println("Token evaluation failed:", err)
-		http.Error(w, "Token evaluation failed", 400)
-		return
-	}
+		blindSignature, blindRequest, err := i.rateLimitedIssuer.EvaluateWithoutCheck(&tokenRequest)
+		if err != nil {
+			log.Println("Token evaluation failed:", err)
+			http.Error(w, "Token evaluation failed", 400)
+			return
+		}
 
-	w.Header().Set("content-type", tokenResponseMediaType)
-	w.Header().Set(headerTokenLimit, strconv.Itoa(defaultOriginTokenLimit))
-	w.Header().Set(headerTokenOrigin, marshalStructuredBinary(blindRequest))
-	w.Write(blindSignature)
+		w.Header().Set("content-type", tokenResponseMediaType)
+		w.Header().Set(headerTokenLimit, strconv.Itoa(defaultOriginTokenLimit))
+		w.Header().Set(headerTokenOrigin, marshalStructuredBinary(blindRequest))
+		w.Write(blindSignature)
+	} else if tokenType == pat.BasicPublicTokenType {
+		var tokenRequest pat.BasicPublicTokenRequest
+		if !tokenRequest.Unmarshal(body) {
+			log.Println("Failed decoding token request")
+			http.Error(w, "Failed decoding token request", 400)
+			return
+		}
+
+		blindSignature, err := i.basicIssuer.Evaluate(&tokenRequest)
+		if err != nil {
+			log.Println("Token evaluation failed:", err)
+			http.Error(w, "Token evaluation failed", 400)
+			return
+		}
+
+		w.Header().Set("content-type", tokenResponseMediaType)
+		w.Write(blindSignature)
+	}
 }
 
 func startIssuer(c *cli.Context) error {
@@ -144,18 +173,21 @@ func startIssuer(c *cli.Context) error {
 		log.Fatal("Invalid key material (missing private key). See README for configuration.")
 	}
 
-	patIssuer := pat.NewIssuer()
-
+	basicIssuer := pat.NewBasicPublicIssuer()
+	rateLimitedIssuer := pat.NewRateLimitedIssuer()
 	origins := c.StringSlice("origins")
 	if len(origins) > 0 {
 		for _, origin := range origins {
-			patIssuer.AddOrigin(origin)
+			rateLimitedIssuer.AddOrigin(origin)
 		}
 	} else {
-		patIssuer.AddOrigin("origin.example")
+		rateLimitedIssuer.AddOrigin("origin.example")
 	}
 
-	issuer := TestIssuer{patIssuer}
+	issuer := TestIssuer{
+		rateLimitedIssuer: rateLimitedIssuer,
+		basicIssuer:       basicIssuer,
+	}
 
 	http.HandleFunc(issuerConfigURI, issuer.handleConfigRequest)
 	http.HandleFunc(tokenRequestURI, issuer.handleIssuanceRequest)

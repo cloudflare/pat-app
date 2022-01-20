@@ -17,7 +17,7 @@ github.com/cloudflare/circl/dh/sidh/internal/p434
 github.com/cloudflare/circl/dh/sidh/internal/p503
 github.com/cloudflare/circl/dh/sidh/internal/p751
 github.com/cloudflare/circl/internal/sha3
-# github.com/cloudflare/pat-go v0.0.0-20220112172648-e2d6c5244598
+# github.com/cloudflare/pat-go v0.0.0-20220119235955-61097cb308c4
 ## explicit; go 1.15
 github.com/cloudflare/pat-go
 github.com/cloudflare/pat-go/ed25519

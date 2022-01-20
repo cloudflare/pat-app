@@ -125,6 +125,10 @@ var Commands = []cli.Command{
 				Name:  "cross-origin",
 				Usage: "Flag to request cross-origin tokens",
 			},
+			cli.StringFlag{
+				Name:  "token-type",
+				Usage: "Type of token protocol requested ['basic', 'rate-limited'], defaults to 'rate-limited'",
+			},
 		},
 	},
 }
