@@ -272,7 +272,7 @@ func fetchRateLimitedToken(client pat.RateLimitedClient, clientOriginSecret []by
 func runClientFetch(c *cli.Context) error {
 	origin := c.String("origin")        // localhost:4567
 	resource := c.String("resource")    // "/index.html"
-	secret := c.String("secret")        // 32 random bytes
+	secret := c.String("secret")        // 48 random bytes
 	attester := c.String("attester")    // attester.example:4569
 	store := c.String("store")          // token_store.json
 	tokenType := c.String("token-type") // "basic" or "rate-limited"

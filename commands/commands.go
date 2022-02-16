@@ -28,6 +28,10 @@ var Commands = []cli.Command{
 				Name:  "origins",
 				Usage: "Supported origins",
 			},
+			cli.StringFlag{
+				Name:  "log",
+				Value: "error",
+			},
 		},
 	},
 	{
@@ -48,6 +52,10 @@ var Commands = []cli.Command{
 			cli.StringFlag{
 				Name:  "port",
 				Value: "443",
+			},
+			cli.StringFlag{
+				Name:  "log",
+				Value: "error",
 			},
 		},
 	},
@@ -79,6 +87,10 @@ var Commands = []cli.Command{
 				Name:     "name",
 				Value:    "",
 				Required: true,
+			},
+			cli.StringFlag{
+				Name:  "log",
+				Value: "error",
 			},
 		},
 	},
@@ -128,6 +140,10 @@ var Commands = []cli.Command{
 			cli.StringFlag{
 				Name:  "token-type",
 				Usage: "Type of token protocol requested ['basic', 'rate-limited'], defaults to 'rate-limited'",
+			},
+			cli.StringFlag{
+				Name:  "log",
+				Value: "error",
 			},
 		},
 	},

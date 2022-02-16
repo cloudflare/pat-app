@@ -292,6 +292,7 @@ func startOrigin(c *cli.Context) error {
 	port := c.String("port")
 	issuer := c.String("issuer")
 	name := c.String("name")
+	logLevel := c.String("log")
 
 	if cert == "" {
 		log.Fatal("Invalid key material (missing certificate). See README for configuration.")
@@ -304,6 +305,13 @@ func startOrigin(c *cli.Context) error {
 	}
 	if name == "" {
 		log.Fatal("Invalid origin name. See README for configuration.")
+	}
+
+	switch logLevel {
+	case "debug":
+		log.SetLevel(log.DebugLevel)
+	case "info":
+		log.SetLevel(log.InfoLevel)
 	}
 
 	issuerConfig, err := fetchIssuerConfig(issuer)

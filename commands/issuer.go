@@ -130,7 +130,7 @@ func (i TestIssuer) handleIssuanceRequest(w http.ResponseWriter, req *http.Reque
 			return
 		}
 
-		blindSignature, blindRequest, err := i.rateLimitedIssuer.EvaluateWithoutCheck(&tokenRequest)
+		blindSignature, blindRequest, err := i.rateLimitedIssuer.Evaluate(&tokenRequest)
 		if err != nil {
 			log.Debugln("Token evaluation failed:", err)
 			http.Error(w, "Token evaluation failed", 400)
@@ -165,12 +165,19 @@ func startIssuer(c *cli.Context) error {
 	cert := c.String("cert")
 	key := c.String("key")
 	port := c.String("port")
+	logLevel := c.String("log")
 
 	if cert == "" {
 		log.Fatal("Invalid key material (missing certificate). See README for configuration.")
 	}
 	if key == "" {
 		log.Fatal("Invalid key material (missing private key). See README for configuration.")
+	}
+	switch logLevel {
+	case "debug":
+		log.SetLevel(log.DebugLevel)
+	case "info":
+		log.SetLevel(log.InfoLevel)
 	}
 
 	basicIssuer := pat.NewBasicPublicIssuer()

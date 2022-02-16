@@ -17,12 +17,10 @@ github.com/cloudflare/circl/dh/sidh/internal/p434
 github.com/cloudflare/circl/dh/sidh/internal/p503
 github.com/cloudflare/circl/dh/sidh/internal/p751
 github.com/cloudflare/circl/internal/sha3
-# github.com/cloudflare/pat-go v0.0.0-20220119235955-61097cb308c4
+# github.com/cloudflare/pat-go v0.0.0-20220216000542-1fc267e295c4
 ## explicit; go 1.15
 github.com/cloudflare/pat-go
-github.com/cloudflare/pat-go/ed25519
-github.com/cloudflare/pat-go/ed25519/internal/edwards25519
-github.com/cloudflare/pat-go/ed25519/internal/edwards25519/field
+github.com/cloudflare/pat-go/ecdsa
 # github.com/cpuguy83/go-md2man/v2 v2.0.0-20190314233015-f79a8a8ca69d
 ## explicit; go 1.12
 github.com/cpuguy83/go-md2man/v2/md2man

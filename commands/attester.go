@@ -6,12 +6,12 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"net/http/httputil"
 	"strconv"
 
 	pat "github.com/cloudflare/pat-go"
+	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 )
 
@@ -261,12 +261,20 @@ func startAttester(c *cli.Context) error {
 	cert := c.String("cert")
 	key := c.String("key")
 	port := c.String("port")
+	logLevel := c.String("log")
 
 	if cert == "" {
 		log.Fatal("Invalid key material (missing certificate). See README for configuration.")
 	}
 	if key == "" {
 		log.Fatal("Invalid key material (missing private key). See README for configuration.")
+	}
+
+	switch logLevel {
+	case "debug":
+		log.SetLevel(log.DebugLevel)
+	case "info":
+		log.SetLevel(log.InfoLevel)
 	}
 
 	attester := TestAttester{
