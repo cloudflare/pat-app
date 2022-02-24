@@ -21,6 +21,11 @@ var Commands = []cli.Command{
 				Required: true,
 			},
 			cli.StringFlag{
+				Name:     "name",
+				Value:    "",
+				Required: true,
+			},
+			cli.StringFlag{
 				Name:  "port",
 				Value: "443",
 			},

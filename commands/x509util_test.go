@@ -78,7 +78,7 @@ func TestEncode(t *testing.T) {
 	rsaPrivateKey := loadPrivateKey(t)
 	publicKey := rsaPrivateKey.PublicKey
 
-	publicKeyEnc, err := marshalTokenKey(&publicKey)
+	publicKeyEnc, err := marshalTokenKey(&publicKey, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,6 +87,12 @@ func TestEncode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	legacyEnc, err := marshalTokenKey(&publicKey, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Log(string(legacyEnc))
 
 	if publicKey.N.Cmp(recoveredKey.N) != 0 {
 		t.Fatal("N mismatch")

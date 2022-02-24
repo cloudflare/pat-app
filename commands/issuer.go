@@ -27,16 +27,20 @@ var (
 	// Media types for token requests and response messages
 	tokenRequestMediaType  = "message/token-request"
 	tokenResponseMediaType = "message/token-response"
+
+	// Token key formats
+	legacyTokenKeyMediaType = "message/rsabssa"
 )
 
 type IssuerConfig struct {
-	TokenWindow      string `json:"issuer-token-window"`    // policy window
+	TokenWindow      int    `json:"issuer-token-window"`    // policy window
 	RequestURI       string `json:"issuer-request-uri"`     // request URI
 	RequestKeyURI    string `json:"issuer-request-key-uri"` // per-origin token key
 	OriginNameKeyURI string `json:"origin-name-key-uri"`    // origin HPKE configuration URI
 }
 
 type TestIssuer struct {
+	name              string
 	rateLimitedIssuer *pat.RateLimitedIssuer
 	basicIssuer       *pat.BasicPublicIssuer
 }
@@ -45,10 +49,17 @@ func (i TestIssuer) handleOriginKeyRequest(w http.ResponseWriter, req *http.Requ
 	reqEnc, _ := httputil.DumpRequest(req, false)
 	log.Debugln("Handling origin key request:", string(reqEnc))
 
+	contentType := req.Header.Get("Content-Type")
+	legacyFormat := false
+	if contentType == legacyTokenKeyMediaType {
+		// Default to the RSASSA-PSS OID encoding unless the client requests a legacy key
+		legacyFormat = true
+	}
+
 	origin := req.URL.Query().Get("origin")
 	if origin == "" {
 		log.Debugln("Returning basic issuance key")
-		tokenKeyEnc, err := marshalTokenKey(i.basicIssuer.TokenKey())
+		tokenKeyEnc, err := marshalTokenKey(i.basicIssuer.TokenKey(), legacyFormat)
 		if err != nil {
 			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 			return
@@ -61,7 +72,7 @@ func (i TestIssuer) handleOriginKeyRequest(w http.ResponseWriter, req *http.Requ
 
 	log.Debugln("Returning key for origin", origin)
 	tokenKey := i.rateLimitedIssuer.OriginTokenKey(origin)
-	tokenKeyEnc, err := marshalTokenKey(tokenKey)
+	tokenKeyEnc, err := marshalTokenKey(tokenKey, legacyFormat)
 	if err != nil {
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
@@ -83,13 +94,14 @@ func (i TestIssuer) handleConfigRequest(w http.ResponseWriter, req *http.Request
 	reqEnc, _ := httputil.DumpRequest(req, false)
 	log.Debugln("Handling config request:", string(reqEnc))
 
-	resp := make(map[string]string)
-	resp["issuer-token-window"] = strconv.Itoa(defaultTokenPolicyWindow)
-	resp["issuer-request-uri"] = tokenRequestURI
-	resp["issuer-request-key-uri"] = issuerOriginRequestKeyURI
-	resp["origin-name-key-uri"] = issuerNameKeyURI
+	config := IssuerConfig{
+		TokenWindow:      defaultTokenPolicyWindow,
+		RequestURI:       "https://" + i.name + tokenRequestURI,
+		RequestKeyURI:    "https://" + i.name + issuerOriginRequestKeyURI,
+		OriginNameKeyURI: "https://" + i.name + issuerNameKeyURI,
+	}
 
-	jsonResp, err := json.Marshal(resp)
+	jsonResp, err := json.Marshal(config)
 	if err != nil {
 		http.Error(w, "Internal error", 400)
 		return
@@ -166,12 +178,16 @@ func startIssuer(c *cli.Context) error {
 	key := c.String("key")
 	port := c.String("port")
 	logLevel := c.String("log")
+	name := c.String("name")
 
 	if cert == "" {
 		log.Fatal("Invalid key material (missing certificate). See README for configuration.")
 	}
 	if key == "" {
 		log.Fatal("Invalid key material (missing private key). See README for configuration.")
+	}
+	if name == "" {
+		log.Fatal("Invalid issuer name. See README for configuration.")
 	}
 	switch logLevel {
 	case "debug":
@@ -192,6 +208,7 @@ func startIssuer(c *cli.Context) error {
 	}
 
 	issuer := TestIssuer{
+		name:              name,
 		rateLimitedIssuer: rateLimitedIssuer,
 		basicIssuer:       basicIssuer,
 	}

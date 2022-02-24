@@ -219,7 +219,11 @@ func fetchRateLimitedToken(client pat.RateLimitedClient, clientOriginSecret []by
 		return pat.Token{}, err
 	}
 
-	u, err := url.Parse("https://" + tokenChallenge.issuerName + issuerConfig.RequestURI)
+	issuerName, err := composeURL(tokenChallenge.issuerName, issuerConfig.RequestURI)
+	if err != nil {
+		return pat.Token{}, err
+	}
+	issuerUrl, err := url.Parse(issuerName)
 	if err != nil {
 		return pat.Token{}, err
 	}
@@ -234,7 +238,7 @@ func fetchRateLimitedToken(client pat.RateLimitedClient, clientOriginSecret []by
 		return pat.Token{}, err
 	}
 	q := req.URL.Query()
-	q.Add("issuer", u.Host)
+	q.Add("issuer", issuerUrl.Host)
 	req.URL.RawQuery = q.Encode()
 	req.Header.Set("Content-Type", tokenRequestMediaType)
 
@@ -280,6 +284,7 @@ func runClientFetch(c *cli.Context) error {
 	crossOrigin := c.Bool("cross-origin")
 	tokenCount := c.Int("count")
 	id := c.String("id")
+	logLevel := c.String("log")
 
 	if origin == "" {
 		log.Fatal("Invalid origin. See README for running instructions.")
@@ -292,6 +297,13 @@ func runClientFetch(c *cli.Context) error {
 	}
 	if tokenCount <= 0 || tokenCount > 10 {
 		log.Fatal("Invalid token count. See README for running instructions.")
+	}
+
+	switch logLevel {
+	case "debug":
+		log.SetLevel(log.DebugLevel)
+	case "info":
+		log.SetLevel(log.InfoLevel)
 	}
 
 	clientSecret, err := hex.DecodeString(secret)
@@ -383,12 +395,20 @@ func runClientFetch(c *cli.Context) error {
 					if key == authorizationAttributeChallenge {
 						challengeBlob, err = base64.URLEncoding.DecodeString(value)
 						if err != nil {
-							return err
+							challengeBlob, err = base64.RawURLEncoding.DecodeString(value)
+							if err != nil {
+								log.Error("Failed decoding ", authorizationAttributeChallenge, " attribute")
+								return err
+							}
 						}
 					} else if key == authorizationAttributeTokenKey {
 						tokenKeyEnc, err = base64.URLEncoding.DecodeString(value)
 						if err != nil {
-							return err
+							tokenKeyEnc, err = base64.RawURLEncoding.DecodeString(value)
+							if err != nil {
+								log.Error("Failed decoding ", authorizationAttributeTokenKey, " attribute")
+								return err
+							}
 						}
 					} else if key == authorizationAttributeMaxAge {
 						// Ignore this attribute for now

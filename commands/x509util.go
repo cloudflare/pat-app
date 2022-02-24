@@ -2,6 +2,7 @@ package commands
 
 import (
 	"crypto/rsa"
+	"crypto/x509"
 	"encoding/asn1"
 	"errors"
 	"fmt"
@@ -23,7 +24,7 @@ var (
 	oidPKCS1MGF        = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 1, 8}
 )
 
-func marshalTokenKey(key *rsa.PublicKey) ([]byte, error) {
+func marshalTokenKeyPSSOID(key *rsa.PublicKey) ([]byte, error) {
 	publicKeyBytes, err := asn1.Marshal(pkcs1PSSPublicKey{
 		N: key.N,
 		E: key.E,
@@ -59,6 +60,18 @@ func marshalTokenKey(key *rsa.PublicKey) ([]byte, error) {
 	})
 
 	return b.BytesOrPanic(), nil
+}
+
+func marshalTokenKeyRSAEncryptionOID(key *rsa.PublicKey) ([]byte, error) {
+	return x509.MarshalPKIXPublicKey(key)
+}
+
+func marshalTokenKey(key *rsa.PublicKey, legacyFormat bool) ([]byte, error) {
+	if legacyFormat {
+		return marshalTokenKeyRSAEncryptionOID(key)
+	} else {
+		return marshalTokenKeyPSSOID(key)
+	}
 }
 
 func unmarshalTokenKey(data []byte) (*rsa.PublicKey, error) {

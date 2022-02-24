@@ -14,7 +14,7 @@ certs:
 	mkcert origin.example localhost 127.0.0.1 ::1
 
 issuer: build
-	./pat-app issuer --cert issuer.example+3.pem --key issuer.example+3-key.pem --port 4567 --origins origin.example:4568 --log debug
+	./pat-app issuer --cert issuer.example+3.pem --key issuer.example+3-key.pem --port 4567 --origins origin.example:4568 --log debug --name issuer.example:4567
 origin: build
 	./pat-app origin --cert origin.example+3.pem --key origin.example+3-key.pem --port 4568 --issuer issuer.example:4567 --name origin.example:4568 --log debug
 attester: build
