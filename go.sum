@@ -1,6 +1,7 @@
 git.schwanenlied.me/yawning/x448.git v0.0.0-20170617130356-01b048fb03d6 h1:w8IZgCntCe0RuBJp+dENSMwEBl/k8saTgJ5hPca5IWw=
 git.schwanenlied.me/yawning/x448.git v0.0.0-20170617130356-01b048fb03d6/go.mod h1:wQaGCqEu44ykB17jZHCevrgSVl3KJnwQBObUtrKU4uU=
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
+github.com/bwesterb/go-ristretto v1.2.1 h1:Xd9ZXmjKE2aY8Ub7+4bX7tXsIPsV1pIZaUlJUjI1toE=
 github.com/bwesterb/go-ristretto v1.2.1/go.mod h1:fUIoIZaG73pV5biE2Blr2xEzDoMj7NFEuV9ekS419A0=
 github.com/cisco/go-hpke v0.0.0-20210524174249-dd22b38cf960 h1:eh0zzzreqmFagQ5lzYQmVUrPqJ9moWAn7zz4NiEqsGA=
 github.com/cisco/go-hpke v0.0.0-20210524174249-dd22b38cf960/go.mod h1:RSsoIHRMBe69FbF/fIbmWYa3rrC6vuPyC0MbNUpel3Q=
@@ -9,12 +10,16 @@ github.com/cisco/go-tls-syntax v0.0.0-20200617162716-46b0cfb76b9b/go.mod h1:0AZA
 github.com/cloudflare/circl v1.0.0/go.mod h1:MhjB3NEEhJbTOdLLq964NIUisXDxaE1WkQPUxtgZXiY=
 github.com/cloudflare/circl v1.1.1-0.20211221174948-2d22325a4fed h1:w6QUY4WHa1/AzAu6xLsUrvgPWJAzHKpdk/6viutrK7g=
 github.com/cloudflare/circl v1.1.1-0.20211221174948-2d22325a4fed/go.mod h1:2pFYgkRokjMOqffpY0D1CU6vx0Q5PRPsFYknPwCPrt8=
+github.com/cloudflare/circl v1.1.1-0.20220304233551-65bed837337c h1:SsrHkApyvw0aSWXfw+sdYwS4mOoWfsTz7e4QAkBXGsE=
+github.com/cloudflare/circl v1.1.1-0.20220304233551-65bed837337c/go.mod h1:2pFYgkRokjMOqffpY0D1CU6vx0Q5PRPsFYknPwCPrt8=
 github.com/cloudflare/pat-go v0.0.0-20220203133421-4e990eb10523 h1:rlbvFi6wvXCbUTHPyucJpf/wJVKG/ob+a7uWtZCJ2E8=
 github.com/cloudflare/pat-go v0.0.0-20220203133421-4e990eb10523/go.mod h1:8gyYKVAKaCbBwcibzu2r/C5oimdbmaupjvTPGvs+woQ=
 github.com/cloudflare/pat-go v0.0.0-20220215213051-f060bf69b79c h1:W+fm4pvi/NFk1NA8hfJfFfe6x8TeW3Q15t6c73Un8MM=
 github.com/cloudflare/pat-go v0.0.0-20220215213051-f060bf69b79c/go.mod h1:8gyYKVAKaCbBwcibzu2r/C5oimdbmaupjvTPGvs+woQ=
 github.com/cloudflare/pat-go v0.0.0-20220216000542-1fc267e295c4 h1:ifuMVj/arXDHHO8/4rHXEx85Wlk3HThlvpuJSqo+mFc=
 github.com/cloudflare/pat-go v0.0.0-20220216000542-1fc267e295c4/go.mod h1:8gyYKVAKaCbBwcibzu2r/C5oimdbmaupjvTPGvs+woQ=
+github.com/cloudflare/pat-go v0.0.0-20220309230811-c28695481d7b h1:lr+T3wjdGEBM6SNyBVvto5bGjvFnfI5b3d6fwzDMHMg=
+github.com/cloudflare/pat-go v0.0.0-20220309230811-c28695481d7b/go.mod h1:9sdeF2/wezJAI/mNvvzQgb9GVEp2o0DCWqsefxFqhYE=
 github.com/cpuguy83/go-md2man/v2 v2.0.0-20190314233015-f79a8a8ca69d h1:U+s90UTSYgptZMwQh2aRr3LuazLJIa+Pg3Kc1ylSYVY=
 github.com/cpuguy83/go-md2man/v2 v2.0.0-20190314233015-f79a8a8ca69d/go.mod h1:maD7wRr/U5Z6m/iR4s+kqSMx2CaBsrgA7czyZG/E6dU=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=

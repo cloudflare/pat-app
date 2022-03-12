@@ -1,6 +1,8 @@
 package commands
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
 	"encoding/binary"
 	"encoding/json"
 	"io/ioutil"
@@ -196,7 +198,12 @@ func startIssuer(c *cli.Context) error {
 		log.SetLevel(log.InfoLevel)
 	}
 
-	basicIssuer := pat.NewBasicPublicIssuer()
+	tokenKey, err := rsa.GenerateKey(rand.Reader, 4096)
+	if err != nil {
+		return err
+	}
+
+	basicIssuer := pat.NewBasicPublicIssuer(tokenKey)
 	rateLimitedIssuer := pat.NewRateLimitedIssuer()
 	origins := c.StringSlice("origins")
 	if len(origins) > 0 {
@@ -217,7 +224,7 @@ func startIssuer(c *cli.Context) error {
 	http.HandleFunc(tokenRequestURI, issuer.handleIssuanceRequest)
 	http.HandleFunc(issuerNameKeyURI, issuer.handleNameKeyRequest)
 	http.HandleFunc(issuerOriginRequestKeyURI, issuer.handleOriginKeyRequest)
-	err := http.ListenAndServeTLS(":"+port, cert, key, nil)
+	err = http.ListenAndServeTLS(":"+port, cert, key, nil)
 	if err != nil {
 		log.Fatal("ListenAndServeTLS: ", err)
 	}
