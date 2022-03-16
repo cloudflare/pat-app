@@ -5,6 +5,7 @@ import (
 	"crypto/rsa"
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/http/httputil"
@@ -43,13 +44,28 @@ type IssuerConfig struct {
 
 type TestIssuer struct {
 	name              string
+	debug             bool
 	rateLimitedIssuer *pat.RateLimitedIssuer
 	basicIssuer       *pat.BasicPublicIssuer
 }
 
+func (i TestIssuer) dumpRequest(label string, w http.ResponseWriter, req *http.Request) error {
+	if i.debug {
+		reqEnc, err := httputil.DumpRequest(req, false)
+		if err != nil {
+			return err
+		}
+		log.Debugln(label+":", string(reqEnc))
+	}
+	return nil
+}
+
 func (i TestIssuer) handleOriginKeyRequest(w http.ResponseWriter, req *http.Request) {
-	reqEnc, _ := httputil.DumpRequest(req, false)
-	log.Debugln("Handling origin key request:", string(reqEnc))
+	err := i.dumpRequest("Handling origin key request", w, req)
+	if err != nil {
+		http.Error(w, fmt.Sprint(err), http.StatusInternalServerError)
+		return
+	}
 
 	contentType := req.Header.Get("Content-Type")
 	legacyFormat := false
@@ -68,6 +84,7 @@ func (i TestIssuer) handleOriginKeyRequest(w http.ResponseWriter, req *http.Requ
 		}
 
 		w.Header().Set("Content-Type", "application/rsa-blind-signature-key") // XXX(caw): what content type should we use?
+		w.Header().Set("Connection", "close")
 		w.Write(tokenKeyEnc)
 		return
 	}
@@ -81,20 +98,28 @@ func (i TestIssuer) handleOriginKeyRequest(w http.ResponseWriter, req *http.Requ
 	}
 
 	w.Header().Set("Content-Type", "application/rsa-blind-signature-key") // XXX(caw): what content type should we use?
+	w.Header().Set("Connection", "close")
 	w.Write(tokenKeyEnc)
 }
 
 func (i TestIssuer) handleNameKeyRequest(w http.ResponseWriter, req *http.Request) {
-	reqEnc, _ := httputil.DumpRequest(req, false)
-	log.Debugln("Handling HPKE config request:", string(reqEnc))
+	err := i.dumpRequest("Handling HPKE config request", w, req)
+	if err != nil {
+		http.Error(w, fmt.Sprint(err), http.StatusInternalServerError)
+		return
+	}
 
 	w.Header().Set("Content-Type", "application/issuer-name-key")
+	w.Header().Set("Connection", "close")
 	w.Write(i.rateLimitedIssuer.NameKey().Marshal())
 }
 
 func (i TestIssuer) handleConfigRequest(w http.ResponseWriter, req *http.Request) {
-	reqEnc, _ := httputil.DumpRequest(req, false)
-	log.Debugln("Handling config request:", string(reqEnc))
+	err := i.dumpRequest("Handling config request", w, req)
+	if err != nil {
+		http.Error(w, fmt.Sprint(err), http.StatusInternalServerError)
+		return
+	}
 
 	config := IssuerConfig{
 		TokenWindow:      defaultTokenPolicyWindow,
@@ -105,25 +130,31 @@ func (i TestIssuer) handleConfigRequest(w http.ResponseWriter, req *http.Request
 
 	jsonResp, err := json.Marshal(config)
 	if err != nil {
-		http.Error(w, "Internal error", 400)
+		http.Error(w, fmt.Sprint(err), http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Connection", "close")
 	w.Write(jsonResp)
 }
 
 func (i TestIssuer) handleIssuanceRequest(w http.ResponseWriter, req *http.Request) {
-	reqEnc, _ := httputil.DumpRequest(req, false)
-	log.Debugln("Handling issuance request:", string(reqEnc))
+	err := i.dumpRequest("Handling issuance request", w, req)
+	if err != nil {
+		http.Error(w, fmt.Sprint(err), http.StatusInternalServerError)
+		return
+	}
 
 	if req.Method != http.MethodPost {
 		log.Debugln("Invalid method")
+		w.Header().Set("Connection", "close")
 		http.Error(w, "Invalid method", 400)
 		return
 	}
 	if req.Header.Get("Content-Type") != tokenRequestMediaType {
-		log.Debugln("Invalid content type")
+		log.Debugln("Invalid content type, expected", tokenRequestMediaType, "got", req.Header.Get("Content-Type"))
+		w.Header().Set("Connection", "close")
 		http.Error(w, "Invalid Content-Type", 400)
 		return
 	}
@@ -131,6 +162,7 @@ func (i TestIssuer) handleIssuanceRequest(w http.ResponseWriter, req *http.Reque
 	body, err := ioutil.ReadAll(req.Body)
 	if err != nil {
 		log.Debugln("Failed reading request body")
+		w.Header().Set("Connection", "close")
 		http.Error(w, err.Error(), 400)
 		return
 	}
@@ -140,6 +172,7 @@ func (i TestIssuer) handleIssuanceRequest(w http.ResponseWriter, req *http.Reque
 		var tokenRequest pat.RateLimitedTokenRequest
 		if !tokenRequest.Unmarshal(body) {
 			log.Debugln("Failed decoding token request")
+			w.Header().Set("Connection", "close")
 			http.Error(w, "Failed decoding token request", 400)
 			return
 		}
@@ -147,11 +180,13 @@ func (i TestIssuer) handleIssuanceRequest(w http.ResponseWriter, req *http.Reque
 		blindSignature, blindRequest, err := i.rateLimitedIssuer.Evaluate(&tokenRequest)
 		if err != nil {
 			log.Debugln("Token evaluation failed:", err)
+			w.Header().Set("Connection", "close")
 			http.Error(w, "Token evaluation failed", 400)
 			return
 		}
 
 		w.Header().Set("content-type", tokenResponseMediaType)
+		w.Header().Set("Connection", "close")
 		w.Header().Set(headerTokenLimit, strconv.Itoa(defaultOriginTokenLimit))
 		w.Header().Set(headerTokenOrigin, marshalStructuredBinary(blindRequest))
 		w.Write(blindSignature)
@@ -159,6 +194,7 @@ func (i TestIssuer) handleIssuanceRequest(w http.ResponseWriter, req *http.Reque
 		var tokenRequest pat.BasicPublicTokenRequest
 		if !tokenRequest.Unmarshal(body) {
 			log.Debugln("Failed decoding token request")
+			w.Header().Set("Connection", "close")
 			http.Error(w, "Failed decoding token request", 400)
 			return
 		}
@@ -166,11 +202,13 @@ func (i TestIssuer) handleIssuanceRequest(w http.ResponseWriter, req *http.Reque
 		blindSignature, err := i.basicIssuer.Evaluate(&tokenRequest)
 		if err != nil {
 			log.Debugln("Token evaluation failed:", err)
+			w.Header().Set("Connection", "close")
 			http.Error(w, "Token evaluation failed", 400)
 			return
 		}
 
 		w.Header().Set("content-type", tokenResponseMediaType)
+		w.Header().Set("Connection", "close")
 		w.Write(blindSignature)
 	}
 }
@@ -192,6 +230,8 @@ func startIssuer(c *cli.Context) error {
 		log.Fatal("Invalid issuer name. See README for configuration.")
 	}
 	switch logLevel {
+	case "verose":
+		log.SetLevel(log.DebugLevel)
 	case "debug":
 		log.SetLevel(log.DebugLevel)
 	case "info":
@@ -216,6 +256,7 @@ func startIssuer(c *cli.Context) error {
 
 	issuer := TestIssuer{
 		name:              name,
+		debug:             logLevel == "verbose",
 		rateLimitedIssuer: rateLimitedIssuer,
 		basicIssuer:       basicIssuer,
 	}
