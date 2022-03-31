@@ -133,23 +133,10 @@ func fetchBasicToken(client pat.BasicPublicClient, attester string, challenge []
 	}
 	tokenRequestEnc := tokenRequestState.Request().Marshal()
 
-	u, err := url.Parse("https://" + tokenChallenge.issuerName + issuerConfig.RequestURI)
+	req, err := http.NewRequest(http.MethodPost, issuerConfig.RequestURI, bytes.NewBuffer(tokenRequestEnc))
 	if err != nil {
 		return pat.Token{}, err
 	}
-
-	tokenRequestURI, err := composeURL(attester, "/token-request")
-	if err != nil {
-		return pat.Token{}, err
-	}
-
-	req, err := http.NewRequest(http.MethodPost, tokenRequestURI, bytes.NewBuffer(tokenRequestEnc))
-	if err != nil {
-		return pat.Token{}, err
-	}
-	q := req.URL.Query()
-	q.Add("issuer", u.Host)
-	req.URL.RawQuery = q.Encode()
 	req.Header.Set("Content-Type", tokenRequestMediaType)
 
 	reqEnc, _ := httputil.DumpRequest(req, false)
@@ -479,6 +466,8 @@ func runClientFetch(c *cli.Context) error {
 				log.Fatal(err)
 			}
 		}
+	} else {
+		log.Debugln("Missing WWW-Authenticate header")
 	}
 
 	return nil
