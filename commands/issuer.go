@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"strconv"
-	"time"
 
 	pat "github.com/cloudflare/pat-go"
 	log "github.com/sirupsen/logrus"
@@ -215,31 +214,6 @@ func (i TestIssuer) handleIssuanceRequest(w http.ResponseWriter, req *http.Reque
 	}
 }
 
-type customHandler struct {
-	i TestIssuer
-}
-
-func (th customHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	switch r.URL.Path {
-	case issuerConfigURI:
-		th.i.handleConfigRequest(w, r)
-		break
-	case issuerNameKeyURI:
-		th.i.handleNameKeyRequest(w, r)
-		break
-	case issuerOriginRequestKeyURI:
-		th.i.handleOriginKeyRequest(w, r)
-		break
-	case tokenRequestURI:
-		th.i.handleIssuanceRequest(w, r)
-		break
-	default:
-		log.Debugln("Unsupported path")
-		w.Header().Set("Connection", "close")
-		http.Error(w, "Unsupported path", 400)
-	}
-}
-
 func startIssuer(c *cli.Context) error {
 	cert := c.String("cert")
 	key := c.String("key")
@@ -288,16 +262,11 @@ func startIssuer(c *cli.Context) error {
 		basicIssuer:       basicIssuer,
 	}
 
-	server := &http.Server{
-		Addr:           ":" + port,
-		Handler:        &customHandler{issuer},
-		ReadTimeout:    10 * time.Second,
-		WriteTimeout:   10 * time.Second,
-		MaxHeaderBytes: 1 << 20,
-	}
-	server.SetKeepAlivesEnabled(false)
-
-	err = server.ListenAndServeTLS(cert, key)
+	http.HandleFunc(issuerConfigURI, issuer.handleConfigRequest)
+	http.HandleFunc(tokenRequestURI, issuer.handleIssuanceRequest)
+	http.HandleFunc(issuerNameKeyURI, issuer.handleNameKeyRequest)
+	http.HandleFunc(issuerOriginRequestKeyURI, issuer.handleOriginKeyRequest)
+	err = http.ListenAndServeTLS(":"+port, cert, key, nil)
 	if err != nil {
 		log.Fatal("ListenAndServeTLS: ", err)
 	}

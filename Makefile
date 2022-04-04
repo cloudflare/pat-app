@@ -22,7 +22,7 @@ attester: build
 
 clean:
 	@echo "Cleaning and removing the pat-app ..."
-	@rm -f pat-app
+	@rm -f pat-app *.gz
 
 build: clean
 	@echo "Building the binary for pat-app ..."

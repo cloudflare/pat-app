@@ -55,7 +55,7 @@ type TestOrigin struct {
 func (o TestOrigin) CreateChallenge(req *http.Request) (string, string) {
 	nonce := make([]byte, 32)
 	rand.Reader.Read(nonce)
-	originName := o.originName
+	originInfo := []string{o.originName, "example.com"}
 
 	if req.Header.Get(headerTokenAttributeNoninteractive) != "" || req.URL.Query().Get("noninteractive") != "" {
 		// If the client requested a non-interactive token, then clear out the nonce slot
@@ -63,7 +63,7 @@ func (o TestOrigin) CreateChallenge(req *http.Request) (string, string) {
 	}
 	if req.Header.Get(headerTokenAttributeCrossOrigin) != "" || req.URL.Query().Get("crossorigin") != "" {
 		// If the client requested a cross-origin token, then clear out the origin slot
-		originName = ""
+		originInfo = nil
 	}
 
 	tokenKey := base64.URLEncoding.EncodeToString(o.validationKeyEnc)
@@ -89,7 +89,7 @@ func (o TestOrigin) CreateChallenge(req *http.Request) (string, string) {
 	challenge := TokenChallenge{
 		tokenType:       tokenType,
 		issuerName:      o.issuerName,
-		originName:      originName,
+		originInfo:      originInfo,
 		redemptionNonce: nonce,
 	}
 

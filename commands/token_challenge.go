@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"strings"
 
 	"golang.org/x/crypto/cryptobyte"
 )
@@ -16,7 +17,7 @@ type TokenChallenge struct {
 	tokenType       uint16
 	issuerName      string
 	redemptionNonce []byte
-	originName      string
+	originInfo      []string
 }
 
 func (c TokenChallenge) Marshal() []byte {
@@ -29,7 +30,7 @@ func (c TokenChallenge) Marshal() []byte {
 		b.AddBytes(c.redemptionNonce)
 	})
 	b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
-		b.AddBytes([]byte(c.originName))
+		b.AddBytes([]byte(strings.Join(c.originInfo, ",")))
 	})
 	return b.BytesOrPanic()
 }
@@ -56,11 +57,11 @@ func UnmarshalTokenChallenge(data []byte) (TokenChallenge, error) {
 	challenge.redemptionNonce = make([]byte, len(redemptionNonce))
 	copy(challenge.redemptionNonce, redemptionNonce)
 
-	var originName cryptobyte.String
-	if !s.ReadUint16LengthPrefixed(&originName) {
+	var originInfo cryptobyte.String
+	if !s.ReadUint16LengthPrefixed(&originInfo) {
 		return TokenChallenge{}, fmt.Errorf("Invalid TokenRequest encoding")
 	}
-	challenge.originName = string(originName)
+	challenge.originInfo = strings.Split(string(originInfo), ",")
 
 	return challenge, nil
 }
