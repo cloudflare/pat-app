@@ -49,7 +49,7 @@ type TestOrigin struct {
 	originNameKey         pat.PublicNameKey
 
 	// Map from challenge hash to list of outstanding challenges
-	challenges map[string][]TokenChallenge
+	challenges map[string][]pat.TokenChallenge
 }
 
 func (o TestOrigin) CreateChallenge(req *http.Request) (string, string) {
@@ -86,11 +86,11 @@ func (o TestOrigin) CreateChallenge(req *http.Request) (string, string) {
 		}
 	}
 
-	challenge := TokenChallenge{
-		tokenType:       tokenType,
-		issuerName:      o.issuerName,
-		originInfo:      originInfo,
-		redemptionNonce: nonce,
+	challenge := pat.TokenChallenge{
+		TokenType:       tokenType,
+		IssuerName:      o.issuerName,
+		OriginInfo:      originInfo,
+		RedemptionNonce: nonce,
 	}
 
 	// Add to the running list of challenges
@@ -99,7 +99,7 @@ func (o TestOrigin) CreateChallenge(req *http.Request) (string, string) {
 	contextEnc := hex.EncodeToString(context[:])
 	_, ok := o.challenges[contextEnc]
 	if !ok {
-		o.challenges[contextEnc] = make([]TokenChallenge, 0)
+		o.challenges[contextEnc] = make([]pat.TokenChallenge, 0)
 	}
 	o.challenges[contextEnc] = append(o.challenges[contextEnc], challenge)
 	log.Debugln("Adding challenge context", contextEnc)
@@ -179,7 +179,7 @@ func (o TestOrigin) handleRequest(w http.ResponseWriter, req *http.Request) {
 
 	authInput := token.AuthenticatorInput()
 	key := o.validationKey
-	if challenge.tokenType == pat.BasicPublicTokenType {
+	if challenge.TokenType == pat.BasicPublicTokenType {
 		key = o.basicValidationKey
 	}
 
@@ -287,7 +287,7 @@ func startOrigin(c *cli.Context) error {
 		validationKey:         publicKey,
 		basicValidationKeyEnc: basicKeyEnc,
 		basicValidationKey:    basicKey,
-		challenges:            make(map[string][]TokenChallenge),
+		challenges:            make(map[string][]pat.TokenChallenge),
 	}
 
 	http.HandleFunc("/", origin.handleRequest)

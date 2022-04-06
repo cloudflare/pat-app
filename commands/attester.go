@@ -27,7 +27,7 @@ var (
 	headerTokenLimit      = "sec-token-limit"
 
 	// Rate-limited issuance protocol type
-	patTokenType = uint16(0x0003)
+	rateLimitedTokenType = uint16(0x0003)
 )
 
 type ClientState struct {

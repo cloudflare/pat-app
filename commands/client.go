@@ -117,12 +117,12 @@ func fetchBasicToken(client pat.BasicPublicClient, attester string, challenge []
 		return pat.Token{}, err
 	}
 
-	tokenChallenge, err := UnmarshalTokenChallenge(challenge)
+	tokenChallenge, err := pat.UnmarshalTokenChallenge(challenge)
 	if err != nil {
 		return pat.Token{}, err
 	}
 
-	issuerConfig, err := fetchIssuerConfig(tokenChallenge.issuerName)
+	issuerConfig, err := fetchIssuerConfig(tokenChallenge.IssuerName)
 	if err != nil {
 		return pat.Token{}, err
 	}
@@ -176,17 +176,17 @@ func fetchRateLimitedToken(client pat.RateLimitedClient, clientOriginSecret []by
 		return pat.Token{}, err
 	}
 
-	tokenChallenge, err := UnmarshalTokenChallenge(challenge)
+	tokenChallenge, err := pat.UnmarshalTokenChallenge(challenge)
 	if err != nil {
 		return pat.Token{}, err
 	}
 
-	issuerConfig, err := fetchIssuerConfig(tokenChallenge.issuerName)
+	issuerConfig, err := fetchIssuerConfig(tokenChallenge.IssuerName)
 	if err != nil {
 		return pat.Token{}, err
 	}
 
-	issuerNameKeyURI, err := composeURL(tokenChallenge.issuerName, issuerConfig.OriginNameKeyURI)
+	issuerNameKeyURI, err := composeURL(tokenChallenge.IssuerName, issuerConfig.OriginNameKeyURI)
 	if err != nil {
 		return pat.Token{}, err
 	}
@@ -206,7 +206,7 @@ func fetchRateLimitedToken(client pat.RateLimitedClient, clientOriginSecret []by
 		return pat.Token{}, err
 	}
 
-	issuerName, err := composeURL(tokenChallenge.issuerName, issuerConfig.RequestURI)
+	issuerName, err := composeURL(tokenChallenge.IssuerName, issuerConfig.RequestURI)
 	if err != nil {
 		return pat.Token{}, err
 	}
