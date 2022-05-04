@@ -2,10 +2,14 @@ package commands
 
 import (
 	"bytes"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/sha512"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"io/ioutil"
+	"math/big"
 	"net/http"
 	"net/http/httputil"
 	"strconv"
@@ -13,6 +17,7 @@ import (
 	pat "github.com/cloudflare/pat-go"
 	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
+	"golang.org/x/crypto/cryptobyte"
 )
 
 var (
@@ -20,11 +25,12 @@ var (
 	attesterTokenRequestURI = "/token-request"
 
 	// Headers exchanged during the issuance protocol
-	headerTokenOrigin     = "sec-token-origin"
-	headerClientOriginKey = "sec-token-client"
-	headerRequestBlind    = "sec-token-request-blind"
-	headerClientID        = "sec-client-id"
-	headerTokenLimit      = "sec-token-limit"
+	headerTokenOrigin  = "sec-token-origin"
+	headerClientKey    = "sec-token-client"
+	headerRequestBlind = "sec-token-request-blind"
+	headerRequestKey   = "sec-token-request-key"
+	headerClientID     = "sec-client-id"
+	headerTokenLimit   = "sec-token-limit"
 
 	// Rate-limited issuance protocol type
 	rateLimitedTokenType = uint16(0x0003)
@@ -115,7 +121,13 @@ func (a TestAttester) handleAttestationRequest(w http.ResponseWriter, req *http.
 			http.Error(w, err.Error(), 400)
 			return
 		}
-		clientOriginKey, err := parseStructuredBinaryHeader(req, headerClientOriginKey)
+		clientKey, err := parseStructuredBinaryHeader(req, headerClientKey)
+		if err != nil {
+			log.Println("parseStructuredBinaryHeader failed:", err)
+			http.Error(w, err.Error(), 400)
+			return
+		}
+		requestKeyEnc, err := parseStructuredBinaryHeader(req, headerRequestKey)
 		if err != nil {
 			log.Println("parseStructuredBinaryHeader failed:", err)
 			http.Error(w, err.Error(), 400)
@@ -133,8 +145,46 @@ func (a TestAttester) handleAttestationRequest(w http.ResponseWriter, req *http.
 			clientID = "default"
 		}
 
-		// XXX(caw): verify the token request signature and that it's valid
-		// XXX(caw): make sure the blinded public key is valid for the given client
+		var tokenRequest pat.RateLimitedTokenRequest
+		if !tokenRequest.Unmarshal(requestBody) {
+			log.Println("Failed decoding client request body:", err)
+			http.Error(w, err.Error(), 400)
+			return
+		}
+
+		// Deserialize the request key
+		curve := elliptic.P384()
+		x, y := elliptic.UnmarshalCompressed(curve, requestKeyEnc)
+		requestKey := &ecdsa.PublicKey{
+			curve, x, y,
+		}
+
+		scalarLen := (curve.Params().Params().BitSize + 7) / 8
+		r := new(big.Int).SetBytes(tokenRequest.Signature[:scalarLen])
+		s := new(big.Int).SetBytes(tokenRequest.Signature[scalarLen:])
+
+		// Verify the request signature
+		b := cryptobyte.NewBuilder(nil)
+		b.AddUint16(pat.RateLimitedTokenType)
+		b.AddUint8(tokenRequest.TokenKeyID)
+		b.AddBytes(tokenRequest.NameKeyID)
+		b.AddBytes(tokenRequest.EncryptedTokenRequest)
+		message := b.BytesOrPanic()
+
+		hash := sha512.New384()
+		hash.Write(message)
+		digest := hash.Sum(nil)
+
+		valid := ecdsa.Verify(requestKey, digest, r, s)
+		if !valid {
+			log.Println("Request signature failed to verify:", err)
+			http.Error(w, err.Error(), 400)
+			return
+		}
+
+		// Note: typically, the Attester would check that the request key is the equal
+		// to the output of BlindPublicKey(client public key, request blind), but since
+		// this test Attester does not keep any per-Client state, we skip this step.
 
 		tokenReqEnc, _ := httputil.DumpRequest(tokenReq, false)
 		log.Println("Forwarding attestation token request:", string(tokenReqEnc))
@@ -175,7 +225,7 @@ func (a TestAttester) handleAttestationRequest(w http.ResponseWriter, req *http.
 			return
 		}
 
-		index, err := pat.FinalizeIndex(clientOriginKey, requestBlind, blindedRequestKey)
+		index, err := pat.FinalizeIndex(clientKey, requestBlind, blindedRequestKey)
 		if err != nil {
 			log.Println("Index computation failed:", err)
 			http.Error(w, "Index computation failed", 400)

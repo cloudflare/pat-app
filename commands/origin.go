@@ -13,6 +13,7 @@ import (
 	"net/http/httputil"
 	"strconv"
 	"strings"
+	"sync"
 
 	pat "github.com/cloudflare/pat-go"
 	log "github.com/sirupsen/logrus"
@@ -49,7 +50,8 @@ type TestOrigin struct {
 	originNameKey         pat.PublicNameKey
 
 	// Map from challenge hash to list of outstanding challenges
-	challenges map[string][]pat.TokenChallenge
+	challenges    map[string][]pat.TokenChallenge
+	challengeLock sync.Mutex
 }
 
 func (o TestOrigin) CreateChallenge(req *http.Request) (string, string) {
@@ -97,6 +99,10 @@ func (o TestOrigin) CreateChallenge(req *http.Request) (string, string) {
 	challengeEnc := challenge.Marshal()
 	context := sha256.Sum256(challengeEnc)
 	contextEnc := hex.EncodeToString(context[:])
+
+	// Acquire the lock and write
+	o.challengeLock.Lock()
+	defer o.challengeLock.Unlock()
 	_, ok := o.challenges[contextEnc]
 	if !ok {
 		o.challenges[contextEnc] = make([]pat.TokenChallenge, 0)
@@ -256,19 +262,36 @@ func startOrigin(c *cli.Context) error {
 	if err != nil {
 		return err
 	}
-	requestKeyURI, err := composeURL(issuer, issuerConfig.RequestKeyURI)
-	if err != nil {
-		return err
+
+	// XXX(caw): fetch basic and rate-limited tokens here
+	var basicValidationKeyEnc []byte
+	var basicValidationKey *rsa.PublicKey
+	var validationKeyEnc []byte
+	var validationKey *rsa.PublicKey
+	for i := 0; i < len(issuerConfig.TokenKeys); i++ {
+		switch issuerConfig.TokenKeys[i].TokenType {
+		case int(pat.BasicPublicTokenType):
+			basicValidationKeyEnc, err = base64.URLEncoding.DecodeString(issuerConfig.TokenKeys[i].TokenKey)
+			if err != nil {
+				log.Fatal(err)
+			}
+			basicValidationKey, err = pat.UnmarshalTokenKey(basicValidationKeyEnc)
+			if err != nil {
+				log.Fatal(err)
+			}
+		case int(pat.RateLimitedTokenType):
+			validationKeyEnc, err = base64.URLEncoding.DecodeString(issuerConfig.TokenKeys[i].TokenKey)
+			if err != nil {
+				log.Fatal(err)
+			}
+			validationKey, err = pat.UnmarshalTokenKey(validationKeyEnc)
+			if err != nil {
+				log.Fatal(err)
+			}
+		}
 	}
-	publicKeyEnc, publicKey, err := fetchOriginTokenKey(requestKeyURI, name)
-	if err != nil {
-		return err
-	}
-	basicKeyEnc, basicKey, err := fetchOriginTokenKey(requestKeyURI, "")
-	if err != nil {
-		return err
-	}
-	nameKeyURI, err := composeURL(issuer, issuerConfig.OriginNameKeyURI)
+
+	nameKeyURI, err := composeURL(issuer, issuerConfig.IssuerEncapKeyURI)
 	if err != nil {
 		return err
 	}
@@ -277,17 +300,16 @@ func startOrigin(c *cli.Context) error {
 		return err
 	}
 
-	log.Debugln("Token verification key:", hex.EncodeToString(publicKeyEnc))
-
 	origin := TestOrigin{
 		issuerName:            issuer,
 		originName:            name,
 		originNameKey:         originNameKey,
-		validationKeyEnc:      publicKeyEnc,
-		validationKey:         publicKey,
-		basicValidationKeyEnc: basicKeyEnc,
-		basicValidationKey:    basicKey,
+		validationKeyEnc:      validationKeyEnc,
+		validationKey:         validationKey,
+		basicValidationKeyEnc: basicValidationKeyEnc,
+		basicValidationKey:    basicValidationKey,
 		challenges:            make(map[string][]pat.TokenChallenge),
+		challengeLock:         sync.Mutex{},
 	}
 
 	http.HandleFunc("/", origin.handleRequest)

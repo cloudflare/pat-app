@@ -3,6 +3,7 @@ package commands
 import (
 	"crypto/rand"
 	"crypto/rsa"
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -22,10 +23,9 @@ var (
 	defaultTokenPolicyWindow = 86400
 
 	// API URIs
-	tokenRequestURI           = "/token-request"
-	issuerConfigURI           = "/.well-known/token-issuer-directory"
-	issuerNameKeyURI          = "/name-key"
-	issuerOriginRequestKeyURI = "/origin-token-key"
+	tokenRequestURI  = "/token-request"
+	issuerConfigURI  = "/.well-known/token-issuer-directory"
+	issuerNameKeyURI = "/name-key"
 
 	// Media types for token requests and response messages
 	tokenRequestMediaType  = "message/token-request"
@@ -35,11 +35,16 @@ var (
 	legacyTokenKeyMediaType = "message/rsabssa"
 )
 
+type IssuerTokenKey struct {
+	TokenType int    `json:"token-type"`
+	TokenKey  string `json:"token-key"`
+}
+
 type IssuerConfig struct {
-	TokenWindow      int    `json:"issuer-token-window"`    // policy window
-	RequestURI       string `json:"issuer-request-uri"`     // request URI
-	RequestKeyURI    string `json:"issuer-request-key-uri"` // per-origin token key
-	OriginNameKeyURI string `json:"origin-name-key-uri"`    // origin HPKE configuration URI
+	TokenWindow       int              `json:"issuer-token-window"`  // policy window
+	RequestURI        string           `json:"issuer-request-uri"`   // request URI
+	TokenKeys         []IssuerTokenKey `json:"token-keys"`           // per-origin token key
+	IssuerEncapKeyURI string           `json:"issuer-encap-key-uri"` // issuer encapsulation key URI
 }
 
 type TestIssuer struct {
@@ -58,48 +63,6 @@ func (i TestIssuer) dumpRequest(label string, w http.ResponseWriter, req *http.R
 		log.Debugln(label+":", string(reqEnc))
 	}
 	return nil
-}
-
-func (i TestIssuer) handleOriginKeyRequest(w http.ResponseWriter, req *http.Request) {
-	err := i.dumpRequest("Handling origin key request", w, req)
-	if err != nil {
-		http.Error(w, fmt.Sprint(err), http.StatusInternalServerError)
-		return
-	}
-
-	contentType := req.Header.Get("Content-Type")
-	legacyFormat := false
-	if contentType == legacyTokenKeyMediaType {
-		// Default to the RSASSA-PSS OID encoding unless the client requests a legacy key
-		legacyFormat = true
-	}
-
-	origin := req.URL.Query().Get("origin")
-	if origin == "" {
-		log.Debugln("Returning basic issuance key")
-		tokenKeyEnc, err := marshalTokenKey(i.basicIssuer.TokenKey(), legacyFormat)
-		if err != nil {
-			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/rsa-blind-signature-key") // XXX(caw): what content type should we use?
-		w.Header().Set("Connection", "close")
-		w.Write(tokenKeyEnc)
-		return
-	}
-
-	log.Debugln("Returning key for origin", origin)
-	tokenKey := i.rateLimitedIssuer.OriginTokenKey(origin)
-	tokenKeyEnc, err := marshalTokenKey(tokenKey, legacyFormat)
-	if err != nil {
-		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/rsa-blind-signature-key") // XXX(caw): what content type should we use?
-	w.Header().Set("Connection", "close")
-	w.Write(tokenKeyEnc)
 }
 
 func (i TestIssuer) handleNameKeyRequest(w http.ResponseWriter, req *http.Request) {
@@ -121,11 +84,33 @@ func (i TestIssuer) handleConfigRequest(w http.ResponseWriter, req *http.Request
 		return
 	}
 
+	basicTokenKeyEnc, err := marshalTokenKey(i.basicIssuer.TokenKey(), false)
+	if err != nil {
+		http.Error(w, fmt.Sprint(err), http.StatusInternalServerError)
+		return
+	}
+
+	rateLimitedTokenKeyEnc, err := marshalTokenKey(i.rateLimitedIssuer.TokenKey(), false)
+	if err != nil {
+		http.Error(w, fmt.Sprint(err), http.StatusInternalServerError)
+		return
+	}
+
+	tokenKeys := make([]IssuerTokenKey, 0)
+	tokenKeys = append(tokenKeys, IssuerTokenKey{
+		TokenType: int(pat.BasicPublicTokenType),
+		TokenKey:  base64.URLEncoding.EncodeToString(basicTokenKeyEnc),
+	})
+	tokenKeys = append(tokenKeys, IssuerTokenKey{
+		TokenType: int(pat.RateLimitedTokenType),
+		TokenKey:  base64.URLEncoding.EncodeToString(rateLimitedTokenKeyEnc),
+	})
+
 	config := IssuerConfig{
-		TokenWindow:      defaultTokenPolicyWindow,
-		RequestURI:       "https://" + i.name + tokenRequestURI,
-		RequestKeyURI:    "https://" + i.name + issuerOriginRequestKeyURI,
-		OriginNameKeyURI: "https://" + i.name + issuerNameKeyURI,
+		TokenWindow:       defaultTokenPolicyWindow,
+		RequestURI:        "https://" + i.name + tokenRequestURI,
+		IssuerEncapKeyURI: "https://" + i.name + issuerNameKeyURI,
+		TokenKeys:         tokenKeys,
 	}
 
 	jsonResp, err := json.Marshal(config)
@@ -178,7 +163,7 @@ func (i TestIssuer) handleIssuanceRequest(w http.ResponseWriter, req *http.Reque
 			return
 		}
 
-		blindSignature, blindRequest, err := i.rateLimitedIssuer.Evaluate(&tokenRequest)
+		tokenResponse, blindRequest, err := i.rateLimitedIssuer.Evaluate(&tokenRequest)
 		if err != nil {
 			log.Debugln("Token evaluation failed:", err)
 			w.Header().Set("Connection", "close")
@@ -190,7 +175,7 @@ func (i TestIssuer) handleIssuanceRequest(w http.ResponseWriter, req *http.Reque
 		w.Header().Set("Connection", "close")
 		w.Header().Set(headerTokenLimit, strconv.Itoa(defaultOriginTokenLimit))
 		w.Header().Set(headerTokenOrigin, marshalStructuredBinary(blindRequest))
-		w.Write(blindSignature)
+		w.Write(tokenResponse)
 	} else if tokenType == pat.BasicPublicTokenType {
 		var tokenRequest pat.BasicPublicTokenRequest
 		if !tokenRequest.Unmarshal(body) {
@@ -200,7 +185,7 @@ func (i TestIssuer) handleIssuanceRequest(w http.ResponseWriter, req *http.Reque
 			return
 		}
 
-		blindSignature, err := i.basicIssuer.Evaluate(&tokenRequest)
+		tokenResponse, err := i.basicIssuer.Evaluate(&tokenRequest)
 		if err != nil {
 			log.Debugln("Token evaluation failed:", err)
 			w.Header().Set("Connection", "close")
@@ -210,7 +195,7 @@ func (i TestIssuer) handleIssuanceRequest(w http.ResponseWriter, req *http.Reque
 
 		w.Header().Set("content-type", tokenResponseMediaType)
 		w.Header().Set("Connection", "close")
-		w.Write(blindSignature)
+		w.Write(tokenResponse)
 	}
 }
 
@@ -239,13 +224,14 @@ func startIssuer(c *cli.Context) error {
 		log.SetLevel(log.InfoLevel)
 	}
 
-	tokenKey, err := rsa.GenerateKey(rand.Reader, 4096)
+	// XXX(caw): key size is a function of the token issuace protocol
+	tokenKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		return err
 	}
 
 	basicIssuer := pat.NewBasicPublicIssuer(tokenKey)
-	rateLimitedIssuer := pat.NewRateLimitedIssuer()
+	rateLimitedIssuer := pat.NewRateLimitedIssuer(tokenKey)
 	origins := c.StringSlice("origins")
 	if len(origins) > 0 {
 		for _, origin := range origins {
@@ -265,7 +251,6 @@ func startIssuer(c *cli.Context) error {
 	http.HandleFunc(issuerConfigURI, issuer.handleConfigRequest)
 	http.HandleFunc(tokenRequestURI, issuer.handleIssuanceRequest)
 	http.HandleFunc(issuerNameKeyURI, issuer.handleNameKeyRequest)
-	http.HandleFunc(issuerOriginRequestKeyURI, issuer.handleOriginKeyRequest)
 	err = http.ListenAndServeTLS(":"+port, cert, key, nil)
 	if err != nil {
 		log.Fatal("ListenAndServeTLS: ", err)

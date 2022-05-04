@@ -3,7 +3,6 @@ package commands
 import (
 	"bytes"
 	"crypto/rand"
-	"crypto/rsa"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
@@ -66,40 +65,6 @@ func fetchIssuerNameKey(nameKeyURI string) (pat.PublicNameKey, error) {
 	return nameKey, nil
 }
 
-func fetchOriginTokenKey(tokenKeyURI, origin string) ([]byte, *rsa.PublicKey, error) {
-	req, err := http.NewRequest(http.MethodGet, tokenKeyURI, nil)
-	if err != nil {
-		return nil, nil, err
-	}
-	q := req.URL.Query()
-	if origin != "" {
-		q.Add("origin", origin)
-	}
-	req.URL.RawQuery = q.Encode()
-
-	httpClient := &http.Client{}
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return nil, nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		return nil, nil, fmt.Errorf("Request failed with error %d", resp.StatusCode)
-	}
-
-	tokenKeyEnc, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	tokenKey, err := unmarshalTokenKey(tokenKeyEnc)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return tokenKeyEnc, tokenKey, nil
-}
-
 func computeAnonymousOrigin(secret []byte, origin string) ([]byte, error) {
 	originID := make([]byte, 32)
 	hkdf := hkdf.New(sha256.New, secret, nil, []byte(origin))
@@ -133,7 +98,12 @@ func fetchBasicToken(client pat.BasicPublicClient, attester string, challenge []
 	}
 	tokenRequestEnc := tokenRequestState.Request().Marshal()
 
-	req, err := http.NewRequest(http.MethodPost, issuerConfig.RequestURI, bytes.NewBuffer(tokenRequestEnc))
+	requestURI, err := composeURL(tokenChallenge.IssuerName, issuerConfig.RequestURI)
+	if err != nil {
+		return pat.Token{}, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, requestURI, bytes.NewBuffer(tokenRequestEnc))
 	if err != nil {
 		return pat.Token{}, err
 	}
@@ -186,7 +156,7 @@ func fetchRateLimitedToken(client pat.RateLimitedClient, clientOriginSecret []by
 		return pat.Token{}, err
 	}
 
-	issuerNameKeyURI, err := composeURL(tokenChallenge.IssuerName, issuerConfig.OriginNameKeyURI)
+	issuerNameKeyURI, err := composeURL(tokenChallenge.IssuerName, issuerConfig.IssuerEncapKeyURI)
 	if err != nil {
 		return pat.Token{}, err
 	}
@@ -230,8 +200,9 @@ func fetchRateLimitedToken(client pat.RateLimitedClient, clientOriginSecret []by
 	req.Header.Set("Content-Type", tokenRequestMediaType)
 
 	req.Header.Set(headerTokenOrigin, marshalStructuredBinary(anonymousOriginID))
-	req.Header.Set(headerClientOriginKey, marshalStructuredBinary(tokenRequestState.BlindedRequestKey()))
 	req.Header.Set(headerRequestBlind, marshalStructuredBinary(blind))
+	req.Header.Set(headerRequestKey, marshalStructuredBinary(tokenRequestState.RequestKey()))
+	req.Header.Set(headerClientKey, marshalStructuredBinary(tokenRequestState.ClientKey()))
 	if clientID != "" {
 		req.Header.Set(headerClientID, clientID)
 	}
