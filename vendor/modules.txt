@@ -29,7 +29,7 @@ github.com/cloudflare/circl/internal/sha3
 github.com/cloudflare/circl/math
 github.com/cloudflare/circl/oprf
 github.com/cloudflare/circl/xof
-# github.com/cloudflare/pat-go v0.0.0-20220504142115-f2ab3943644b
+# github.com/cloudflare/pat-go v0.0.0-20220505110203-02b7ab827a07
 ## explicit; go 1.15
 github.com/cloudflare/pat-go
 github.com/cloudflare/pat-go/ecdsa

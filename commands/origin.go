@@ -20,42 +20,46 @@ import (
 	"github.com/urfave/cli"
 )
 
+const (
+	challengeNonceLength = 32
+)
+
 var (
 	// WWW-Authenticate authorization challenge attributes
 	authorizationAttributeChallenge = "challenge"
 	authorizationAttributeMaxAge    = "max-age"
 	authorizationAttributeTokenKey  = "token-key"
-	authorizationAttributeNameKey   = "origin-name-key"
+	authorizationAttributeNameKey   = "issuer-encap-key"
 
 	// Headers clients can send to control the types of token challenges sent
 	headerTokenAttributeNoninteractive = "Sec-Token-Attribute-Non-Interactive"
 	headerTokenAttributeCrossOrigin    = "Sec-Token-Attribute-Cross-Origin"
 	headerTokenAttributeChallengeCount = "Sec-Token-Attribute-Count"
-	headerTokenType                    = "Sec-CH-Token-Type" // XXX(caw): string for now, but this should be an sf-list of sf-integer values
+	headerTokenType                    = "Sec-CH-Token-Type"
 
-	// Type of authorization token
+	// Type of authorization
 	privateTokenType = "PrivateToken"
 
 	// Test resource to load upon token success
 	testResource = "https://tfpauly.github.io/privacy-proxy/draft-privacypass-rate-limit-tokens.html"
 )
 
-type TestOrigin struct {
-	issuerName            string
-	originName            string
-	validationKeyEnc      []byte // Encoding of validation public key
-	validationKey         *rsa.PublicKey
-	basicValidationKeyEnc []byte // Encoding of validation public key
-	basicValidationKey    *rsa.PublicKey
-	originNameKey         pat.PublicNameKey
+type Origin struct {
+	issuerName             string
+	originName             string
+	rateLimitedTokenKeyEnc []byte // Encoding of validation public key
+	rateLimitedTokenKey    *rsa.PublicKey
+	basicTokenKeyEnc       []byte // Encoding of validation public key
+	basicValidationKey     *rsa.PublicKey
+	issuerEncapKey         pat.EncapKey
 
 	// Map from challenge hash to list of outstanding challenges
 	challenges    map[string][]pat.TokenChallenge
 	challengeLock sync.Mutex
 }
 
-func (o TestOrigin) CreateChallenge(req *http.Request) (string, string) {
-	nonce := make([]byte, 32)
+func (o Origin) CreateChallenge(req *http.Request) (string, string) {
+	nonce := make([]byte, challengeNonceLength)
 	rand.Reader.Read(nonce)
 	originInfo := []string{o.originName, "example.com"}
 
@@ -68,21 +72,21 @@ func (o TestOrigin) CreateChallenge(req *http.Request) (string, string) {
 		originInfo = nil
 	}
 
-	tokenKey := base64.URLEncoding.EncodeToString(o.validationKeyEnc)
+	tokenKey := base64.URLEncoding.EncodeToString(o.rateLimitedTokenKeyEnc)
 	tokenType := pat.RateLimitedTokenType // default
 	if req.Header.Get(headerTokenType) != "" || req.URL.Query().Get("type") != "" {
 		tokenTypeValue, err := strconv.Atoi(req.Header.Get(headerTokenType))
 		if err == nil {
 			if tokenTypeValue == int(pat.BasicPublicTokenType) {
 				tokenType = pat.BasicPublicTokenType
-				tokenKey = base64.URLEncoding.EncodeToString(o.basicValidationKeyEnc)
+				tokenKey = base64.URLEncoding.EncodeToString(o.basicTokenKeyEnc)
 			}
 		} else {
 			tokenTypeValue, err = strconv.Atoi(req.URL.Query().Get("type"))
 			if err == nil {
 				if tokenTypeValue == int(pat.BasicPublicTokenType) {
 					tokenType = pat.BasicPublicTokenType
-					tokenKey = base64.URLEncoding.EncodeToString(o.basicValidationKeyEnc)
+					tokenKey = base64.URLEncoding.EncodeToString(o.basicTokenKeyEnc)
 				}
 			}
 		}
@@ -113,7 +117,7 @@ func (o TestOrigin) CreateChallenge(req *http.Request) (string, string) {
 	return base64.URLEncoding.EncodeToString(challengeEnc), tokenKey
 }
 
-func (o TestOrigin) handleRequest(w http.ResponseWriter, req *http.Request) {
+func (o Origin) handleRequest(w http.ResponseWriter, req *http.Request) {
 	reqEnc, _ := httputil.DumpRequest(req, false)
 	log.Debugln("Handling request:", string(reqEnc))
 
@@ -135,8 +139,8 @@ func (o TestOrigin) handleRequest(w http.ResponseWriter, req *http.Request) {
 			challengeString := authorizationAttributeChallenge + "=" + challengeEnc
 			issuerKeyString := authorizationAttributeTokenKey + "=" + tokenKeyEnc
 			maxAgeString := authorizationAttributeMaxAge + "=" + "10"
-			originNameKeyString := authorizationAttributeNameKey + "=" + base64.URLEncoding.EncodeToString(o.originNameKey.Marshal()) // This might be ignored by clients
-			challengeList = challengeList + privateTokenType + " " + challengeString + ", " + issuerKeyString + "," + originNameKeyString + ", " + maxAgeString
+			issuerEncapKeyString := authorizationAttributeNameKey + "=" + base64.URLEncoding.EncodeToString(o.issuerEncapKey.Marshal()) // This might be ignored by clients
+			challengeList = challengeList + privateTokenType + " " + challengeString + ", " + issuerKeyString + "," + issuerEncapKeyString + ", " + maxAgeString
 		}
 
 		w.Header().Set("WWW-Authenticate", challengeList)
@@ -184,7 +188,7 @@ func (o TestOrigin) handleRequest(w http.ResponseWriter, req *http.Request) {
 	}
 
 	authInput := token.AuthenticatorInput()
-	key := o.validationKey
+	key := o.rateLimitedTokenKey
 	if challenge.TokenType == pat.BasicPublicTokenType {
 		key = o.basicValidationKey
 	}
@@ -203,6 +207,7 @@ func (o TestOrigin) handleRequest(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// Fetch the test resource for the client
 	httpClient := &http.Client{}
 	resourceReq, err := http.NewRequest(http.MethodGet, testResource, nil)
 	if err != nil {
@@ -210,7 +215,6 @@ func (o TestOrigin) handleRequest(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	resourceReq.Header.Add("Authorization", "PrivateToken token="+base64.URLEncoding.EncodeToString(token.Marshal()))
 	resp, err := httpClient.Do(resourceReq)
 	if err != nil {
 		log.Debugln(err.Error())
@@ -263,11 +267,10 @@ func startOrigin(c *cli.Context) error {
 		return err
 	}
 
-	// XXX(caw): fetch basic and rate-limited tokens here
 	var basicValidationKeyEnc []byte
 	var basicValidationKey *rsa.PublicKey
-	var validationKeyEnc []byte
-	var validationKey *rsa.PublicKey
+	var rateLimitedTokenKeyEnc []byte
+	var rateLimitedTokenKey *rsa.PublicKey
 	for i := 0; i < len(issuerConfig.TokenKeys); i++ {
 		switch issuerConfig.TokenKeys[i].TokenType {
 		case int(pat.BasicPublicTokenType):
@@ -280,11 +283,11 @@ func startOrigin(c *cli.Context) error {
 				log.Fatal(err)
 			}
 		case int(pat.RateLimitedTokenType):
-			validationKeyEnc, err = base64.URLEncoding.DecodeString(issuerConfig.TokenKeys[i].TokenKey)
+			rateLimitedTokenKeyEnc, err = base64.URLEncoding.DecodeString(issuerConfig.TokenKeys[i].TokenKey)
 			if err != nil {
 				log.Fatal(err)
 			}
-			validationKey, err = pat.UnmarshalTokenKey(validationKeyEnc)
+			rateLimitedTokenKey, err = pat.UnmarshalTokenKey(rateLimitedTokenKeyEnc)
 			if err != nil {
 				log.Fatal(err)
 			}
@@ -300,16 +303,16 @@ func startOrigin(c *cli.Context) error {
 		return err
 	}
 
-	origin := TestOrigin{
-		issuerName:            issuer,
-		originName:            name,
-		originNameKey:         originNameKey,
-		validationKeyEnc:      validationKeyEnc,
-		validationKey:         validationKey,
-		basicValidationKeyEnc: basicValidationKeyEnc,
-		basicValidationKey:    basicValidationKey,
-		challenges:            make(map[string][]pat.TokenChallenge),
-		challengeLock:         sync.Mutex{},
+	origin := Origin{
+		issuerName:             issuer,
+		originName:             name,
+		issuerEncapKey:         originNameKey,
+		rateLimitedTokenKeyEnc: rateLimitedTokenKeyEnc,
+		rateLimitedTokenKey:    rateLimitedTokenKey,
+		basicTokenKeyEnc:       basicValidationKeyEnc,
+		basicValidationKey:     basicValidationKey,
+		challenges:             make(map[string][]pat.TokenChallenge),
+		challengeLock:          sync.Mutex{},
 	}
 
 	http.HandleFunc("/", origin.handleRequest)

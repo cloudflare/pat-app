@@ -23,16 +23,13 @@ var (
 	defaultTokenPolicyWindow = 86400
 
 	// API URIs
-	tokenRequestURI  = "/token-request"
-	issuerConfigURI  = "/.well-known/token-issuer-directory"
-	issuerNameKeyURI = "/name-key"
+	tokenRequestURI   = "/token-request"
+	issuerConfigURI   = "/.well-known/token-issuer-directory"
+	issuerEncapKeyURI = "/issuer-encap-key"
 
 	// Media types for token requests and response messages
 	tokenRequestMediaType  = "message/token-request"
 	tokenResponseMediaType = "message/token-response"
-
-	// Token key formats
-	legacyTokenKeyMediaType = "message/rsabssa"
 )
 
 type IssuerTokenKey struct {
@@ -47,14 +44,14 @@ type IssuerConfig struct {
 	IssuerEncapKeyURI string           `json:"issuer-encap-key-uri"` // issuer encapsulation key URI
 }
 
-type TestIssuer struct {
+type Issuer struct {
 	name              string
 	debug             bool
 	rateLimitedIssuer *pat.RateLimitedIssuer
 	basicIssuer       *pat.BasicPublicIssuer
 }
 
-func (i TestIssuer) dumpRequest(label string, w http.ResponseWriter, req *http.Request) error {
+func (i Issuer) dumpRequest(label string, w http.ResponseWriter, req *http.Request) error {
 	if i.debug {
 		reqEnc, err := httputil.DumpRequest(req, false)
 		if err != nil {
@@ -65,7 +62,7 @@ func (i TestIssuer) dumpRequest(label string, w http.ResponseWriter, req *http.R
 	return nil
 }
 
-func (i TestIssuer) handleNameKeyRequest(w http.ResponseWriter, req *http.Request) {
+func (i Issuer) handleNameKeyRequest(w http.ResponseWriter, req *http.Request) {
 	err := i.dumpRequest("Handling HPKE config request", w, req)
 	if err != nil {
 		http.Error(w, fmt.Sprint(err), http.StatusInternalServerError)
@@ -77,7 +74,7 @@ func (i TestIssuer) handleNameKeyRequest(w http.ResponseWriter, req *http.Reques
 	w.Write(i.rateLimitedIssuer.NameKey().Marshal())
 }
 
-func (i TestIssuer) handleConfigRequest(w http.ResponseWriter, req *http.Request) {
+func (i Issuer) handleConfigRequest(w http.ResponseWriter, req *http.Request) {
 	err := i.dumpRequest("Handling config request", w, req)
 	if err != nil {
 		http.Error(w, fmt.Sprint(err), http.StatusInternalServerError)
@@ -109,7 +106,7 @@ func (i TestIssuer) handleConfigRequest(w http.ResponseWriter, req *http.Request
 	config := IssuerConfig{
 		TokenWindow:       defaultTokenPolicyWindow,
 		RequestURI:        "https://" + i.name + tokenRequestURI,
-		IssuerEncapKeyURI: "https://" + i.name + issuerNameKeyURI,
+		IssuerEncapKeyURI: "https://" + i.name + issuerEncapKeyURI,
 		TokenKeys:         tokenKeys,
 	}
 
@@ -125,7 +122,7 @@ func (i TestIssuer) handleConfigRequest(w http.ResponseWriter, req *http.Request
 	w.Write(jsonResp)
 }
 
-func (i TestIssuer) handleIssuanceRequest(w http.ResponseWriter, req *http.Request) {
+func (i Issuer) handleIssuanceRequest(w http.ResponseWriter, req *http.Request) {
 	err := i.dumpRequest("Handling issuance request", w, req)
 	if err != nil {
 		http.Error(w, fmt.Sprint(err), http.StatusInternalServerError)
@@ -241,7 +238,7 @@ func startIssuer(c *cli.Context) error {
 		rateLimitedIssuer.AddOrigin("origin.example")
 	}
 
-	issuer := TestIssuer{
+	issuer := Issuer{
 		name:              name,
 		debug:             logLevel == "verbose",
 		rateLimitedIssuer: rateLimitedIssuer,
@@ -250,7 +247,7 @@ func startIssuer(c *cli.Context) error {
 
 	http.HandleFunc(issuerConfigURI, issuer.handleConfigRequest)
 	http.HandleFunc(tokenRequestURI, issuer.handleIssuanceRequest)
-	http.HandleFunc(issuerNameKeyURI, issuer.handleNameKeyRequest)
+	http.HandleFunc(issuerEncapKeyURI, issuer.handleNameKeyRequest)
 	err = http.ListenAndServeTLS(":"+port, cert, key, nil)
 	if err != nil {
 		log.Fatal("ListenAndServeTLS: ", err)

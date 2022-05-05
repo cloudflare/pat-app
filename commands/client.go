@@ -45,21 +45,21 @@ func fetchIssuerConfig(issuer string) (IssuerConfig, error) {
 	return issuerConfig, nil
 }
 
-func fetchIssuerNameKey(nameKeyURI string) (pat.PublicNameKey, error) {
+func fetchIssuerNameKey(nameKeyURI string) (pat.EncapKey, error) {
 	resp, err := http.Get(nameKeyURI)
 	if err != nil {
-		return pat.PublicNameKey{}, err
+		return pat.EncapKey{}, err
 	}
 	defer resp.Body.Close()
 
 	nameKeyEnc, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return pat.PublicNameKey{}, err
+		return pat.EncapKey{}, err
 	}
 
-	nameKey, err := pat.UnmarshalPublicNameKey(nameKeyEnc)
+	nameKey, err := pat.UnmarshalEncapKey(nameKeyEnc)
 	if err != nil {
-		return pat.PublicNameKey{}, err
+		return pat.EncapKey{}, err
 	}
 
 	return nameKey, nil
