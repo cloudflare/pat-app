@@ -47,6 +47,7 @@ var (
 type Origin struct {
 	issuerName             string
 	originName             string
+	additionalOriginInfo   []string
 	rateLimitedTokenKeyEnc []byte // Encoding of validation public key
 	rateLimitedTokenKey    *rsa.PublicKey
 	basicTokenKeyEnc       []byte // Encoding of validation public key
@@ -61,7 +62,10 @@ type Origin struct {
 func (o Origin) CreateChallenge(req *http.Request) (string, string) {
 	nonce := make([]byte, challengeNonceLength)
 	rand.Reader.Read(nonce)
-	originInfo := []string{o.originName, "example.com"}
+	originInfo := []string{o.originName}
+	for _, originName := range o.additionalOriginInfo {
+		originInfo = append(originInfo, originName)
+	}
 
 	if req.Header.Get(headerTokenAttributeNoninteractive) != "" || req.URL.Query().Get("noninteractive") != "" {
 		// If the client requested a non-interactive token, then clear out the nonce slot
@@ -240,6 +244,7 @@ func startOrigin(c *cli.Context) error {
 	port := c.String("port")
 	issuer := c.String("issuer")
 	name := c.String("name")
+	originInfo := c.StringSlice("origin-info")
 	logLevel := c.String("log")
 
 	if cert == "" {
@@ -306,6 +311,7 @@ func startOrigin(c *cli.Context) error {
 	origin := Origin{
 		issuerName:             issuer,
 		originName:             name,
+		additionalOriginInfo:   originInfo,
 		issuerEncapKey:         originNameKey,
 		rateLimitedTokenKeyEnc: rateLimitedTokenKeyEnc,
 		rateLimitedTokenKey:    rateLimitedTokenKey,
