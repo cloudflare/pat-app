@@ -97,6 +97,10 @@ var Commands = []cli.Command{
 				Name:  "log",
 				Value: "error",
 			},
+			cli.StringSliceFlag{
+				Name:  "origin-info",
+				Usage: "Additional origins to include in origin_info",
+			},
 		},
 	},
 	{

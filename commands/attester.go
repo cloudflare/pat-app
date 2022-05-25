@@ -168,7 +168,9 @@ func (a TestAttester) handleAttestationRequest(w http.ResponseWriter, req *http.
 		b.AddUint16(pat.RateLimitedTokenType)
 		b.AddUint8(tokenRequest.TokenKeyID)
 		b.AddBytes(tokenRequest.NameKeyID)
-		b.AddBytes(tokenRequest.EncryptedTokenRequest)
+		b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+			b.AddBytes(tokenRequest.EncryptedTokenRequest)
+		})
 		message := b.BytesOrPanic()
 
 		hash := sha512.New384()
