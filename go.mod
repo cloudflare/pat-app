@@ -3,7 +3,7 @@ module github.com/cloudflare/pat-app
 go 1.17
 
 require (
-	github.com/cloudflare/pat-go v0.0.0-20220525163936-245417a0a326
+	github.com/cloudflare/pat-go v0.0.0-20220923180251-b0e1fb857959
 	github.com/sirupsen/logrus v1.8.1
 	github.com/urfave/cli v1.22.5
 	golang.org/x/crypto v0.0.0-20211202192323-5770296d904e

@@ -201,7 +201,6 @@ func fetchRateLimitedToken(client pat.RateLimitedClient, clientOriginSecret []by
 
 	req.Header.Set(headerTokenOrigin, marshalStructuredBinary(anonymousOriginID))
 	req.Header.Set(headerRequestBlind, marshalStructuredBinary(blind))
-	req.Header.Set(headerRequestKey, marshalStructuredBinary(tokenRequestState.RequestKey()))
 	req.Header.Set(headerClientKey, marshalStructuredBinary(tokenRequestState.ClientKey()))
 	if clientID != "" {
 		req.Header.Set(headerClientID, clientID)
