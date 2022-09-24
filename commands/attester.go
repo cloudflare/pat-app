@@ -28,7 +28,6 @@ var (
 	headerTokenOrigin  = "sec-token-origin"
 	headerClientKey    = "sec-token-client"
 	headerRequestBlind = "sec-token-request-blind"
-	headerRequestKey   = "sec-token-request-key"
 	headerClientID     = "sec-client-id"
 	headerTokenLimit   = "sec-token-limit"
 
@@ -127,12 +126,6 @@ func (a TestAttester) handleAttestationRequest(w http.ResponseWriter, req *http.
 			http.Error(w, err.Error(), 400)
 			return
 		}
-		requestKeyEnc, err := parseStructuredBinaryHeader(req, headerRequestKey)
-		if err != nil {
-			log.Println("parseStructuredBinaryHeader failed:", err)
-			http.Error(w, err.Error(), 400)
-			return
-		}
 		requestBlind, err := parseStructuredBinaryHeader(req, headerRequestBlind)
 		if err != nil {
 			log.Println("parseStructuredBinaryHeader failed:", err)
@@ -154,7 +147,7 @@ func (a TestAttester) handleAttestationRequest(w http.ResponseWriter, req *http.
 
 		// Deserialize the request key
 		curve := elliptic.P384()
-		x, y := elliptic.UnmarshalCompressed(curve, requestKeyEnc)
+		x, y := elliptic.UnmarshalCompressed(curve, tokenRequest.RequestKey)
 		requestKey := &ecdsa.PublicKey{
 			curve, x, y,
 		}
@@ -166,7 +159,7 @@ func (a TestAttester) handleAttestationRequest(w http.ResponseWriter, req *http.
 		// Verify the request signature
 		b := cryptobyte.NewBuilder(nil)
 		b.AddUint16(pat.RateLimitedTokenType)
-		b.AddUint8(tokenRequest.TokenKeyID)
+		b.AddBytes(tokenRequest.RequestKey)
 		b.AddBytes(tokenRequest.NameKeyID)
 		b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
 			b.AddBytes(tokenRequest.EncryptedTokenRequest)
@@ -179,8 +172,8 @@ func (a TestAttester) handleAttestationRequest(w http.ResponseWriter, req *http.
 
 		valid := ecdsa.Verify(requestKey, digest, r, s)
 		if !valid {
-			log.Println("Request signature failed to verify:", err)
-			http.Error(w, err.Error(), 400)
+			log.Println("Request signature failed to verify")
+			http.Error(w, "Request signature failed to verify", 400)
 			return
 		}
 
