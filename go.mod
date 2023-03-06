@@ -6,7 +6,7 @@ require (
 	github.com/cloudflare/pat-go v0.0.0-20220923180251-b0e1fb857959
 	github.com/sirupsen/logrus v1.8.1
 	github.com/urfave/cli v1.22.5
-	golang.org/x/crypto v0.0.0-20211202192323-5770296d904e
+	golang.org/x/crypto v0.1.0
 )
 
 require (
@@ -18,5 +18,5 @@ require (
 	github.com/cpuguy83/go-md2man/v2 v2.0.0-20190314233015-f79a8a8ca69d // indirect
 	github.com/russross/blackfriday/v2 v2.0.1 // indirect
 	github.com/shurcooL/sanitized_anchor_name v1.0.0 // indirect
-	golang.org/x/sys v0.0.0-20211205182925-97ca703d548d // indirect
+	golang.org/x/sys v0.1.0 // indirect
 )
