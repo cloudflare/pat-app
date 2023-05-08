@@ -1,7 +1,7 @@
 # git.schwanenlied.me/yawning/x448.git v0.0.0-20170617130356-01b048fb03d6
 ## explicit
 git.schwanenlied.me/yawning/x448.git
-# github.com/bwesterb/go-ristretto v1.2.1
+# github.com/bwesterb/go-ristretto v1.2.2
 ## explicit; go 1.13
 github.com/bwesterb/go-ristretto
 github.com/bwesterb/go-ristretto/edwards25519
@@ -11,8 +11,8 @@ github.com/cisco/go-hpke
 # github.com/cisco/go-tls-syntax v0.0.0-20200617162716-46b0cfb76b9b
 ## explicit; go 1.14
 github.com/cisco/go-tls-syntax
-# github.com/cloudflare/circl v1.1.1-0.20220304233551-65bed837337c
-## explicit; go 1.15
+# github.com/cloudflare/circl v1.3.2
+## explicit; go 1.17
 github.com/cloudflare/circl/blindsign
 github.com/cloudflare/circl/blindsign/blindrsa
 github.com/cloudflare/circl/dh/sidh
@@ -23,13 +23,13 @@ github.com/cloudflare/circl/dh/sidh/internal/p751
 github.com/cloudflare/circl/ecc/p384
 github.com/cloudflare/circl/expander
 github.com/cloudflare/circl/group
-github.com/cloudflare/circl/group/dleq
 github.com/cloudflare/circl/internal/conv
 github.com/cloudflare/circl/internal/sha3
 github.com/cloudflare/circl/math
 github.com/cloudflare/circl/oprf
 github.com/cloudflare/circl/xof
-# github.com/cloudflare/pat-go v0.0.0-20220923180251-b0e1fb857959
+github.com/cloudflare/circl/zk/dleq
+# github.com/cloudflare/pat-go v0.0.0-20230328025027-11579ba5b0b9
 ## explicit; go 1.15
 github.com/cloudflare/pat-go
 github.com/cloudflare/pat-go/ecdsa
@@ -48,7 +48,7 @@ github.com/sirupsen/logrus
 # github.com/urfave/cli v1.22.5
 ## explicit; go 1.11
 github.com/urfave/cli
-# golang.org/x/crypto v0.0.0-20211202192323-5770296d904e
+# golang.org/x/crypto v0.0.0-20220722155217-630584e8d5aa
 ## explicit; go 1.17
 golang.org/x/crypto/blake2b
 golang.org/x/crypto/blake2s
@@ -61,7 +61,7 @@ golang.org/x/crypto/curve25519/internal/field
 golang.org/x/crypto/hkdf
 golang.org/x/crypto/internal/poly1305
 golang.org/x/crypto/internal/subtle
-# golang.org/x/sys v0.0.0-20211205182925-97ca703d548d
+# golang.org/x/sys v0.0.0-20220811171246-fbc7d0a398ab
 ## explicit; go 1.17
 golang.org/x/sys/cpu
 golang.org/x/sys/internal/unsafeheader

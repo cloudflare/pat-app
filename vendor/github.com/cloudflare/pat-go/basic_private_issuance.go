@@ -6,8 +6,8 @@ import (
 	"fmt"
 
 	"github.com/cloudflare/circl/group"
-	"github.com/cloudflare/circl/group/dleq"
 	"github.com/cloudflare/circl/oprf"
+	"github.com/cloudflare/circl/zk/dleq"
 )
 
 type BasicPrivateClient struct {
@@ -83,7 +83,7 @@ func (c BasicPrivateClient) CreateTokenRequest(challenge, nonce []byte, tokenKey
 		return BasicPrivateTokenRequestState{}, err
 	}
 	request := &BasicPrivateTokenRequest{
-		TokenKeyID: tokenKeyID[0],
+		TokenKeyID: tokenKeyID[len(tokenKeyID)-1],
 		BlindedReq: encRequest,
 	}
 
@@ -127,7 +127,7 @@ func (c BasicPrivateClient) CreateTokenRequestWithBlind(challenge, nonce []byte,
 		return BasicPrivateTokenRequestState{}, err
 	}
 	request := &BasicPrivateTokenRequest{
-		TokenKeyID: tokenKeyID[0],
+		TokenKeyID: tokenKeyID[len(tokenKeyID)-1],
 		BlindedReq: encRequest,
 	}
 
@@ -161,7 +161,7 @@ func (i *BasicPrivateIssuer) TokenKeyID() []byte {
 	if err != nil {
 		panic(err)
 	}
-	keyID := sha256.Sum256(append([]byte{0x00, 0x01}, pkIEnc...))
+	keyID := sha256.Sum256(pkIEnc)
 	return keyID[:]
 }
 
