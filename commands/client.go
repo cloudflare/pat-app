@@ -289,7 +289,7 @@ func runClientFetch(c *cli.Context) error {
 		}
 	}
 
-	rateLimitedClient := pat.CreateRateLimitedClientFromSecret(clientRequestSecret)
+	rateLimitedClient := pat.NewRateLimitedClientFromSecret(clientRequestSecret)
 	basicClient := pat.NewBasicPublicClient()
 
 	resourceURI, err := composeURL(origin, resource)

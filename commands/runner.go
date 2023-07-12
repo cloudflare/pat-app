@@ -168,7 +168,7 @@ func runRunner(c *cli.Context) error {
 		panic(err)
 	}
 
-	rateLimitedClient := pat.CreateRateLimitedClientFromSecret(clientRequestSecret)
+	rateLimitedClient := pat.NewRateLimitedClientFromSecret(clientRequestSecret)
 	basicClient := pat.NewBasicPublicClient()
 	resourceURI, err := composeURL(origin, resource)
 	if err != nil {

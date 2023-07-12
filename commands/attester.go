@@ -2,22 +2,20 @@ package commands
 
 import (
 	"bytes"
-	"crypto/ecdsa"
 	"crypto/elliptic"
-	"crypto/sha512"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"io/ioutil"
-	"math/big"
 	"net/http"
 	"net/http/httputil"
 	"strconv"
 
+	"github.com/cloudflare/pat-go/ecdsa"
+
 	pat "github.com/cloudflare/pat-go"
 	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
-	"golang.org/x/crypto/cryptobyte"
 )
 
 var (
@@ -30,9 +28,6 @@ var (
 	headerRequestBlind = "sec-token-request-blind"
 	headerClientID     = "sec-client-id"
 	headerTokenLimit   = "sec-token-limit"
-
-	// Rate-limited issuance protocol type
-	rateLimitedTokenType = uint16(0x0003)
 )
 
 type ClientState struct {
@@ -43,6 +38,7 @@ type ClientState struct {
 
 type TestAttester struct {
 	client      *http.Client
+	attester    *pat.RateLimitedAttester
 	clientState map[string]ClientState
 }
 
@@ -52,6 +48,25 @@ func parseStructuredBinaryHeader(req *http.Request, header string) ([]byte, erro
 		return nil, fmt.Errorf("Header %s missing", header)
 	}
 	return unmarshalStructuredBinary(req.Header.Get(header))
+}
+
+type MemoryClientStateCache struct {
+	cache map[string]*pat.ClientState
+}
+
+func NewMemoryClientStateCache() MemoryClientStateCache {
+	return MemoryClientStateCache{
+		cache: make(map[string]*pat.ClientState),
+	}
+}
+
+func (c MemoryClientStateCache) Get(clientID string) (*pat.ClientState, bool) {
+	state, ok := c.cache[clientID]
+	return state, ok
+}
+
+func (c MemoryClientStateCache) Put(clientID string, state *pat.ClientState) {
+	c.cache[clientID] = state
 }
 
 func (a TestAttester) handleAttestationRequest(w http.ResponseWriter, req *http.Request) {
@@ -120,7 +135,7 @@ func (a TestAttester) handleAttestationRequest(w http.ResponseWriter, req *http.
 			http.Error(w, err.Error(), 400)
 			return
 		}
-		clientKey, err := parseStructuredBinaryHeader(req, headerClientKey)
+		clientKeyEnc, err := parseStructuredBinaryHeader(req, headerClientKey)
 		if err != nil {
 			log.Println("parseStructuredBinaryHeader failed:", err)
 			http.Error(w, err.Error(), 400)
@@ -145,35 +160,28 @@ func (a TestAttester) handleAttestationRequest(w http.ResponseWriter, req *http.
 			return
 		}
 
+		// XXX(caw): the pat-go interface for VerifyRequest and FinalizeIndex is wildly inconsistent. One accepts
+		// encoded byte arrays, whereas the other accepts decoded things of a specific type (public and private keys
+		// and whatnot). Pick one!
+
 		// Deserialize the request key
 		curve := elliptic.P384()
-		x, y := elliptic.UnmarshalCompressed(curve, tokenRequest.RequestKey)
-		requestKey := &ecdsa.PublicKey{
+		x, y := elliptic.UnmarshalCompressed(curve, clientKeyEnc)
+		clientKey := &ecdsa.PublicKey{
 			curve, x, y,
 		}
 
-		scalarLen := (curve.Params().Params().BitSize + 7) / 8
-		r := new(big.Int).SetBytes(tokenRequest.Signature[:scalarLen])
-		s := new(big.Int).SetBytes(tokenRequest.Signature[scalarLen:])
+		blindKey, err := ecdsa.CreateKey(elliptic.P384(), requestBlind)
+		if err != nil {
+			log.Println("Invalid client blind")
+			http.Error(w, "Invalid client blind", 400)
+			return
+		}
 
-		// Verify the request signature
-		b := cryptobyte.NewBuilder(nil)
-		b.AddUint16(pat.RateLimitedTokenType)
-		b.AddBytes(tokenRequest.RequestKey)
-		b.AddBytes(tokenRequest.NameKeyID)
-		b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
-			b.AddBytes(tokenRequest.EncryptedTokenRequest)
-		})
-		message := b.BytesOrPanic()
-
-		hash := sha512.New384()
-		hash.Write(message)
-		digest := hash.Sum(nil)
-
-		valid := ecdsa.Verify(requestKey, digest, r, s)
-		if !valid {
-			log.Println("Request signature failed to verify")
-			http.Error(w, "Request signature failed to verify", 400)
+		err = a.attester.VerifyRequest(tokenRequest, blindKey, clientKey, anonOrigin)
+		if err != nil {
+			log.Println("Invalid request (signature verification failed)")
+			http.Error(w, "Invalid request (signature verification failed)", 400)
 			return
 		}
 
@@ -220,7 +228,7 @@ func (a TestAttester) handleAttestationRequest(w http.ResponseWriter, req *http.
 			return
 		}
 
-		index, err := pat.FinalizeIndex(clientKey, requestBlind, blindedRequestKey)
+		index, err := a.attester.FinalizeIndex(clientKeyEnc, requestBlind, blindedRequestKey, anonOrigin)
 		if err != nil {
 			log.Println("Index computation failed:", err)
 			http.Error(w, "Index computation failed", 400)
@@ -324,6 +332,7 @@ func startAttester(c *cli.Context) error {
 
 	attester := TestAttester{
 		client:      &http.Client{},
+		attester:    pat.NewRateLimitedAttester(NewMemoryClientStateCache()),
 		clientState: make(map[string]ClientState),
 	}
 

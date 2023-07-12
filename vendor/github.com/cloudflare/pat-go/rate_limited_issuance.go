@@ -1,12 +1,14 @@
 package pat
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/sha512"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"math/big"
@@ -65,48 +67,12 @@ func (r *InnerTokenRequest) Unmarshal(data []byte) bool {
 	return true
 }
 
-func computeIndex(clientKey, indexKey []byte) ([]byte, error) {
-	hkdf := hkdf.New(sha512.New384, indexKey, clientKey, []byte("anon_issuer_origin_id"))
-	clientOriginIndex := make([]byte, crypto.SHA384.Size())
-	if _, err := io.ReadFull(hkdf, clientOriginIndex); err != nil {
-		return nil, err
-	}
-	return clientOriginIndex, nil
-}
-
-// https://tfpauly.github.io/privacy-proxy/draft-privacypass-rate-limit-tokens.html#name-attester-behavior-mapping-o
-func FinalizeIndex(clientKey, blindEnc, blindedRequestKeyEnc []byte) ([]byte, error) {
-	curve := elliptic.P384()
-	x, y := elliptic.UnmarshalCompressed(curve, blindedRequestKeyEnc)
-	blindedRequestKey := &ecdsa.PublicKey{
-		curve, x, y,
-	}
-
-	blindKey, err := ecdsa.CreateKey(curve, blindEnc)
-	if err != nil {
-		return nil, err
-	}
-
-	b := cryptobyte.NewBuilder(nil)
-	b.AddUint16(RateLimitedTokenType)
-	b.AddBytes([]byte("ClientBlind"))
-	ctx := b.BytesOrPanic()
-	indexKey, err := ecdsa.UnblindPublicKeyWithContext(curve, blindedRequestKey, blindKey, ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	indexKeyEnc := elliptic.MarshalCompressed(curve, indexKey.X, indexKey.Y)
-
-	return computeIndex(clientKey, indexKeyEnc)
-}
-
 type RateLimitedClient struct {
 	curve     elliptic.Curve
 	secretKey *ecdsa.PrivateKey
 }
 
-func CreateRateLimitedClientFromSecret(secret []byte) RateLimitedClient {
+func NewRateLimitedClientFromSecret(secret []byte) RateLimitedClient {
 	curve := elliptic.P384()
 	secretKey, err := ecdsa.CreateKey(curve, secret)
 	if err != nil {
@@ -119,7 +85,6 @@ func CreateRateLimitedClientFromSecret(secret []byte) RateLimitedClient {
 	}
 }
 
-// https://tfpauly.github.io/privacy-proxy/draft-privacypass-rate-limit-tokens.html#name-encrypting-origin-names
 func padOriginName(originName string) []byte {
 	N := 31 - ((len(originName) - 1) % 32)
 	zeroes := make([]byte, N)
@@ -141,7 +106,7 @@ func unpadOriginName(paddedOriginName []byte) string {
 	return string(paddedOriginName[0 : lastNonZero+1])
 }
 
-// https://tfpauly.github.io/privacy-proxy/draft-privacypass-rate-limit-tokens.html#name-encrypting-origin-names
+// https://ietf-wg-privacypass.github.io/draft-ietf-privacypass-rate-limit-tokens/draft-ietf-privacypass-rate-limit-tokens.html#name-encrypting-origin-token-req
 func encryptOriginTokenRequest(nameKey EncapKey, tokenKeyID uint8, blindedMessage []byte, requestKey []byte, originName string) ([]byte, []byte, []byte, error) {
 	issuerKeyEnc := nameKey.Marshal()
 	issuerKeyID := sha256.Sum256(issuerKeyEnc)
@@ -200,6 +165,7 @@ func (s RateLimitedTokenRequestState) ClientKey() []byte {
 	return s.clientKey
 }
 
+// https://ietf-wg-privacypass.github.io/draft-ietf-privacypass-rate-limit-tokens/draft-ietf-privacypass-rate-limit-tokens.html#name-attester-to-client-response
 func (s RateLimitedTokenRequestState) FinalizeToken(encryptedtokenResponse []byte) (Token, error) {
 	// response_nonce = random(max(Nn, Nk)), taken from the encapsualted response
 	responseNonceLen := max(s.nameKey.suite.AEAD.KeySize(), s.nameKey.suite.AEAD.NonceSize())
@@ -257,8 +223,7 @@ func (s RateLimitedTokenRequestState) FinalizeToken(encryptedtokenResponse []byt
 	return token, nil
 }
 
-// https://tfpauly.github.io/privacy-proxy/draft-privacypass-rate-limit-tokens.html#name-client-to-attester-request
-// https://tfpauly.github.io/privacy-proxy/draft-privacypass-rate-limit-tokens.html#name-index-computation
+// https://ietf-wg-privacypass.github.io/draft-ietf-privacypass-rate-limit-tokens/draft-ietf-privacypass-rate-limit-tokens.html#name-client-to-attester-request
 func (c RateLimitedClient) CreateTokenRequest(challenge, nonce, blindKeyEnc []byte, tokenKeyID []byte, tokenKey *rsa.PublicKey, originName string, nameKey EncapKey) (RateLimitedTokenRequestState, error) {
 	blindKey, err := ecdsa.CreateKey(c.curve, blindKeyEnc)
 	if err != nil {
@@ -277,7 +242,7 @@ func (c RateLimitedClient) CreateTokenRequest(challenge, nonce, blindKeyEnc []by
 	}
 	blindedPublicKeyEnc := elliptic.MarshalCompressed(c.curve, blindedPublicKey.X, blindedPublicKey.Y)
 
-	verifier := blindrsa.NewRSAVerifier(tokenKey, sha512.New384())
+	verifier := blindrsa.NewRSAVerifier(tokenKey, crypto.SHA384)
 
 	context := sha256.Sum256(challenge)
 	token := Token{
@@ -393,6 +358,11 @@ func (i *RateLimitedIssuer) AddOrigin(origin string) error {
 	return nil
 }
 
+func (i *RateLimitedIssuer) AddOriginWithIndexKey(origin string, privateKey *ecdsa.PrivateKey) error {
+	i.originIndexKeys[origin] = privateKey
+	return nil
+}
+
 func (i *RateLimitedIssuer) OriginIndexKey(origin string) *ecdsa.PrivateKey {
 	key, ok := i.originIndexKeys[origin]
 	if !ok {
@@ -459,6 +429,7 @@ func decryptOriginTokenRequest(nameKey PrivateEncapKey, requestKey []byte, encry
 	return *tokenRequest, secret, err
 }
 
+// https://ietf-wg-privacypass.github.io/draft-ietf-privacypass-rate-limit-tokens/draft-ietf-privacypass-rate-limit-tokens.html#name-issuer-to-attester-response
 func (i RateLimitedIssuer) Evaluate(req *RateLimitedTokenRequest) ([]byte, []byte, error) {
 	// Recover and validate the origin name
 	originTokenRequest, secret, err := decryptOriginTokenRequest(i.nameKey, req.RequestKey, req.EncryptedTokenRequest)
@@ -544,4 +515,160 @@ func (i RateLimitedIssuer) Evaluate(req *RateLimitedTokenRequest) ([]byte, []byt
 	encryptedTokenResponse := append(responseNonce, cipher.Seal(nil, nonce, blindSignature, nil)...)
 
 	return encryptedTokenResponse, blindedRequestKeyEnc, nil
+}
+
+type ClientState struct {
+	originIndices map[string]string // map from anonymous origin ID to anonymous issuer origin ID
+	clientIndices map[string]string // map from anonymous issuer origin ID to anonyous origin ID
+	originCounts  map[string]int    // map from anonymous issuer origin ID to per-origin count
+}
+
+type RateLimitedAttester struct {
+	cache ClientStateCache
+}
+
+type ClientStateCache interface {
+	Get(clientID string) (*ClientState, bool)
+	Put(clientID string, state *ClientState)
+}
+
+func NewRateLimitedAttester(cache ClientStateCache) *RateLimitedAttester {
+	return &RateLimitedAttester{
+		cache: cache,
+	}
+}
+
+func (a *RateLimitedAttester) innerVerifyRequest(tokenRequest RateLimitedTokenRequest) error {
+	// Deserialize the request key
+	curve := elliptic.P384()
+	x, y := elliptic.UnmarshalCompressed(curve, tokenRequest.RequestKey)
+	requestKey := &ecdsa.PublicKey{
+		curve, x, y,
+	}
+
+	scalarLen := (curve.Params().Params().BitSize + 7) / 8
+	r := new(big.Int).SetBytes(tokenRequest.Signature[:scalarLen])
+	s := new(big.Int).SetBytes(tokenRequest.Signature[scalarLen:])
+
+	// Verify the request signature
+	b := cryptobyte.NewBuilder(nil)
+	b.AddUint16(RateLimitedTokenType)
+	b.AddBytes(tokenRequest.RequestKey)
+	b.AddBytes(tokenRequest.NameKeyID)
+	b.AddUint16LengthPrefixed(func(b *cryptobyte.Builder) {
+		b.AddBytes(tokenRequest.EncryptedTokenRequest)
+	})
+	message := b.BytesOrPanic()
+
+	hash := sha512.New384()
+	hash.Write(message)
+	digest := hash.Sum(nil)
+
+	valid := ecdsa.Verify(requestKey, digest, r, s)
+	if !valid {
+		return fmt.Errorf("Request signature invalid")
+	}
+
+	return nil
+}
+
+func (a *RateLimitedAttester) VerifyRequest(tokenRequest RateLimitedTokenRequest, blindKey *ecdsa.PrivateKey, clientKey *ecdsa.PublicKey, anonymousOrigin []byte) error {
+	err := a.innerVerifyRequest(tokenRequest)
+	if err != nil {
+		return nil
+	}
+
+	curve := elliptic.P384()
+	b := cryptobyte.NewBuilder(nil)
+	b.AddUint16(RateLimitedTokenType)
+	b.AddBytes([]byte("ClientBlind"))
+	ctx := b.BytesOrPanic()
+	blindedPublicKey, err := ecdsa.BlindPublicKeyWithContext(curve, clientKey, blindKey, ctx)
+	if err != nil {
+		return err
+	}
+	blindedPublicKeyEnc := elliptic.MarshalCompressed(curve, blindedPublicKey.X, blindedPublicKey.Y)
+	if !bytes.Equal(blindedPublicKeyEnc, tokenRequest.RequestKey) {
+		return fmt.Errorf("Mismatch blinded public key")
+	}
+
+	clientKeyEnc := hex.EncodeToString(elliptic.MarshalCompressed(curve, clientKey.X, clientKey.Y))
+	_, ok := a.cache.Get(clientKeyEnc)
+	if !ok {
+		state := &ClientState{
+			originIndices: make(map[string]string),
+			clientIndices: make(map[string]string),
+			originCounts:  make(map[string]int),
+		}
+		a.cache.Put(clientKeyEnc, state)
+	}
+
+	return nil
+}
+
+func computeIndex(clientKey, indexKey []byte) ([]byte, error) {
+	hkdf := hkdf.New(sha512.New384, indexKey, clientKey, []byte("anon_issuer_origin_id"))
+	clientOriginIndex := make([]byte, crypto.SHA384.Size())
+	if _, err := io.ReadFull(hkdf, clientOriginIndex); err != nil {
+		return nil, err
+	}
+	return clientOriginIndex, nil
+}
+
+// https://ietf-wg-privacypass.github.io/draft-ietf-privacypass-rate-limit-tokens/draft-ietf-privacypass-rate-limit-tokens.html#name-attester-behavior-index-com
+func (a *RateLimitedAttester) FinalizeIndex(clientKey, blindEnc, blindedRequestKeyEnc, anonOriginId []byte) ([]byte, error) {
+	curve := elliptic.P384()
+	x, y := elliptic.UnmarshalCompressed(curve, blindedRequestKeyEnc)
+	blindedRequestKey := &ecdsa.PublicKey{
+		curve, x, y,
+	}
+
+	blindKey, err := ecdsa.CreateKey(curve, blindEnc)
+	if err != nil {
+		return nil, err
+	}
+
+	b := cryptobyte.NewBuilder(nil)
+	b.AddUint16(RateLimitedTokenType)
+	b.AddBytes([]byte("ClientBlind"))
+	ctx := b.BytesOrPanic()
+	indexKey, err := ecdsa.UnblindPublicKeyWithContext(curve, blindedRequestKey, blindKey, ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Compute the anonymous issuer origin ID (index)
+	indexKeyEnc := elliptic.MarshalCompressed(curve, indexKey.X, indexKey.Y)
+	index, err := computeIndex(clientKey, indexKeyEnc)
+	if err != nil {
+		return nil, err
+	}
+
+	// Look up per-client cached state
+	clientKeyEnc := hex.EncodeToString(clientKey)
+	state, ok := a.cache.Get(clientKeyEnc)
+	if !ok {
+		return nil, fmt.Errorf("Unknown client ID: %s", clientKeyEnc)
+	}
+
+	// Check to make sure anonymous origin ID and anonymous issuer origin ID invariants are not violated
+	anonOriginIdEnc := hex.EncodeToString(anonOriginId)
+	indexEnc := hex.EncodeToString(index)
+	_, ok = state.originIndices[anonOriginIdEnc]
+	if !ok {
+		// This is a newly visited origin, so initialize it as such
+		state.originIndices[anonOriginIdEnc] = indexEnc
+	}
+
+	// Check for anonymous origin ID and anonymous issuer origin ID invariant violation
+	expectedOriginID, ok := state.clientIndices[indexEnc]
+	if ok && expectedOriginID != anonOriginIdEnc {
+		// There was an anonymous origin ID that had the same anonymous issuer origin ID, so fail
+		return nil, fmt.Errorf("Repeated anonymous origin ID across client-committed origins")
+	} else {
+		// Otherwise, set the anonymous issuer origin ID and anonymous origin ID pair
+		state.clientIndices[indexEnc] = anonOriginIdEnc
+	}
+
+	return index, nil
 }
