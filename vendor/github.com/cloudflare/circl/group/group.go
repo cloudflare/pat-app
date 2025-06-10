@@ -26,8 +26,6 @@ type Group interface {
 	Identity() Element
 	// Creates an element of the group set to the generator of the group.
 	Generator() Element
-	// Returns a scalar set to the group order.
-	Order() Scalar
 	// RandomElement creates an element chosen at random (using randomness
 	// from rnd) from the set of group elements. Use crypto/rand.Reader as
 	// a cryptographically secure random number generator
@@ -88,7 +86,7 @@ type Element interface {
 	// BinaryUnmarshaler recovers an element from a byte representation
 	// produced either by encoding.BinaryMarshaler or MarshalBinaryCompress.
 	encoding.BinaryUnmarshaler
-	// MarshalBinaryCompress returns a byte representation of an elment in a
+	// MarshalBinaryCompress returns a byte representation of an element in a
 	// compact form whenever the group supports it; otherwise, returns the
 	// same byte representation produced by encoding.BinaryMarshaler.
 	MarshalBinaryCompress() ([]byte, error)
