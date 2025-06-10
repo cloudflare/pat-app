@@ -11,10 +11,12 @@ github.com/cisco/go-hpke
 # github.com/cisco/go-tls-syntax v0.0.0-20200617162716-46b0cfb76b9b
 ## explicit; go 1.14
 github.com/cisco/go-tls-syntax
-# github.com/cloudflare/circl v1.3.3
-## explicit; go 1.19
+# github.com/cloudflare/circl v1.6.1
+## explicit; go 1.22.0
 github.com/cloudflare/circl/blindsign
 github.com/cloudflare/circl/blindsign/blindrsa
+github.com/cloudflare/circl/blindsign/blindrsa/internal/common
+github.com/cloudflare/circl/blindsign/blindrsa/internal/keys
 github.com/cloudflare/circl/dh/sidh
 github.com/cloudflare/circl/dh/sidh/internal/common
 github.com/cloudflare/circl/dh/sidh/internal/p434
@@ -27,7 +29,9 @@ github.com/cloudflare/circl/internal/conv
 github.com/cloudflare/circl/internal/sha3
 github.com/cloudflare/circl/math
 github.com/cloudflare/circl/oprf
+github.com/cloudflare/circl/simd/keccakf1600
 github.com/cloudflare/circl/xof
+github.com/cloudflare/circl/xof/k12
 github.com/cloudflare/circl/zk/dleq
 # github.com/cloudflare/pat-go v0.0.0-20230328025027-11579ba5b0b9
 ## explicit; go 1.15
@@ -48,7 +52,7 @@ github.com/sirupsen/logrus
 # github.com/urfave/cli v1.22.5
 ## explicit; go 1.11
 github.com/urfave/cli
-# golang.org/x/crypto v0.3.1-0.20221117191849-2c476679df9a
+# golang.org/x/crypto v0.11.1-0.20230711161743-2e82bdd1719d
 ## explicit; go 1.17
 golang.org/x/crypto/blake2b
 golang.org/x/crypto/blake2s
@@ -61,7 +65,7 @@ golang.org/x/crypto/curve25519/internal/field
 golang.org/x/crypto/hkdf
 golang.org/x/crypto/internal/alias
 golang.org/x/crypto/internal/poly1305
-# golang.org/x/sys v0.3.0
+# golang.org/x/sys v0.10.0
 ## explicit; go 1.17
 golang.org/x/sys/cpu
 golang.org/x/sys/internal/unsafeheader

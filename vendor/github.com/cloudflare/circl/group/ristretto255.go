@@ -59,16 +59,6 @@ func (g ristrettoGroup) Generator() Element {
 	}
 }
 
-func (g ristrettoGroup) Order() Scalar {
-	q := r255.Scalar{
-		0x5cf5d3ed, 0x5812631a, 0xa2f79cd6, 0x14def9de,
-		0x00000000, 0x00000000, 0x00000000, 0x10000000,
-	}
-	return &ristrettoScalar{
-		s: q,
-	}
-}
-
 func (g ristrettoGroup) RandomElement(r io.Reader) Element {
 	var x r255.Point
 	x.Rand()
@@ -100,7 +90,7 @@ func (g ristrettoGroup) HashToElementNonUniform(b, dst []byte) Element {
 }
 
 func (g ristrettoGroup) HashToElement(msg, dst []byte) Element {
-	// Compliaint with draft-irtf-cfrg-hash-to-curve.
+	// Compliant with draft-irtf-cfrg-hash-to-curve.
 	// Appendix B - Hashing to ristretto255
 	// https://datatracker.ietf.org/doc/html/draft-irtf-cfrg-hash-to-curve-14#appendix-B
 	// SuiteID: ristretto255_XMD:SHA-512_R255MAP_RO_
