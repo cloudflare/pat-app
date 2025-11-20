@@ -11,7 +11,10 @@ import (
 	"crypto/rand"
 
 	"github.com/cloudflare/circl/oprf"
-	"github.com/cloudflare/pat-go"
+	"github.com/cloudflare/pat-go/tokens"
+	"github.com/cloudflare/pat-go/tokens/private"
+	"github.com/cloudflare/pat-go/tokens/type2"
+	"github.com/cloudflare/pat-go/util"
 )
 
 const (
@@ -53,7 +56,7 @@ func TestAuthenticateChallengeHeader(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	type2TokenKeyEnc, err := pat.MarshalTokenKey(&rsaPrivateKey.PublicKey, false)
+	type2TokenKeyEnc, err := util.MarshalTokenKey(&rsaPrivateKey.PublicKey, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +76,7 @@ func TestAuthenticateChallengeHeader(t *testing.T) {
 	}{
 		{
 			numChallenges:   1,
-			tokenTypes:      []uint16{pat.BasicPublicTokenType},
+			tokenTypes:      []uint16{type2.BasicPublicTokenType},
 			tokenKeys:       [][]byte{type2TokenKeyEnc},
 			issuerName:      "issuer.example",
 			originInfo:      []string{"origin.example"},
@@ -82,7 +85,7 @@ func TestAuthenticateChallengeHeader(t *testing.T) {
 		},
 		{
 			numChallenges:   2,
-			tokenTypes:      []uint16{pat.BasicPublicTokenType, pat.BasicPrivateTokenType},
+			tokenTypes:      []uint16{type2.BasicPublicTokenType, private.BasicPrivateTokenType},
 			tokenKeys:       [][]byte{type2TokenKeyEnc, type3TokenKeyEnc},
 			issuerName:      "issuer.example",
 			originInfo:      []string{"origin.example"},
@@ -93,9 +96,9 @@ func TestAuthenticateChallengeHeader(t *testing.T) {
 
 	for _, test := range tests {
 		var challengeList string
-		challenges := make([]pat.TokenChallenge, test.numChallenges)
+		challenges := make([]tokens.TokenChallenge, test.numChallenges)
 		for i := 0; i < test.numChallenges; i++ {
-			challenges[i] = pat.TokenChallenge{
+			challenges[i] = tokens.TokenChallenge{
 				TokenType:       test.tokenTypes[i],
 				IssuerName:      test.issuerName,
 				OriginInfo:      test.originInfo,

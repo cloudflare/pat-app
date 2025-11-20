@@ -15,7 +15,10 @@ import (
 	"strings"
 	"sync"
 
-	pat "github.com/cloudflare/pat-go"
+	"github.com/cloudflare/pat-go/tokens"
+	"github.com/cloudflare/pat-go/tokens/type2"
+	"github.com/cloudflare/pat-go/tokens/type3"
+	"github.com/cloudflare/pat-go/util"
 	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 )
@@ -52,14 +55,14 @@ type Origin struct {
 	rateLimitedTokenKey    *rsa.PublicKey
 	basicTokenKeyEnc       []byte // Encoding of validation public key
 	basicValidationKey     *rsa.PublicKey
-	issuerEncapKey         pat.EncapKey
+	issuerEncapKey         type3.EncapKey
 
 	// Map from challenge hash to list of outstanding challenges
-	challenges    map[string][]pat.TokenChallenge
+	challenges    map[string][]tokens.TokenChallenge
 	challengeLock sync.Mutex
 }
 
-func (o Origin) CreateChallenge(req *http.Request) (string, string) {
+func (o *Origin) CreateChallenge(req *http.Request) (string, string) {
 	nonce := make([]byte, challengeNonceLength)
 	rand.Reader.Read(nonce)
 	originInfo := []string{o.originName}
@@ -77,26 +80,26 @@ func (o Origin) CreateChallenge(req *http.Request) (string, string) {
 	}
 
 	tokenKey := base64.URLEncoding.EncodeToString(o.rateLimitedTokenKeyEnc)
-	tokenType := pat.RateLimitedTokenType // default
+	tokenType := type3.RateLimitedTokenType // default
 	if req.Header.Get(headerTokenType) != "" || req.URL.Query().Get("type") != "" {
 		tokenTypeValue, err := strconv.Atoi(req.Header.Get(headerTokenType))
 		if err == nil {
-			if tokenTypeValue == int(pat.BasicPublicTokenType) {
-				tokenType = pat.BasicPublicTokenType
+			if tokenTypeValue == int(type2.BasicPublicTokenType) {
+				tokenType = type2.BasicPublicTokenType
 				tokenKey = base64.URLEncoding.EncodeToString(o.basicTokenKeyEnc)
 			}
 		} else {
 			tokenTypeValue, err = strconv.Atoi(req.URL.Query().Get("type"))
 			if err == nil {
-				if tokenTypeValue == int(pat.BasicPublicTokenType) {
-					tokenType = pat.BasicPublicTokenType
+				if tokenTypeValue == int(type2.BasicPublicTokenType) {
+					tokenType = type2.BasicPublicTokenType
 					tokenKey = base64.URLEncoding.EncodeToString(o.basicTokenKeyEnc)
 				}
 			}
 		}
 	}
 
-	challenge := pat.TokenChallenge{
+	challenge := tokens.TokenChallenge{
 		TokenType:       tokenType,
 		IssuerName:      o.issuerName,
 		OriginInfo:      originInfo,
@@ -113,7 +116,7 @@ func (o Origin) CreateChallenge(req *http.Request) (string, string) {
 	defer o.challengeLock.Unlock()
 	_, ok := o.challenges[contextEnc]
 	if !ok {
-		o.challenges[contextEnc] = make([]pat.TokenChallenge, 0)
+		o.challenges[contextEnc] = make([]tokens.TokenChallenge, 0)
 	}
 	o.challenges[contextEnc] = append(o.challenges[contextEnc], challenge)
 	log.Debugln("Adding challenge context", contextEnc)
@@ -121,7 +124,7 @@ func (o Origin) CreateChallenge(req *http.Request) (string, string) {
 	return base64.URLEncoding.EncodeToString(challengeEnc), tokenKey
 }
 
-func (o Origin) handleRequest(w http.ResponseWriter, req *http.Request) {
+func (o *Origin) handleRequest(w http.ResponseWriter, req *http.Request) {
 	reqEnc, _ := httputil.DumpRequest(req, false)
 	log.Debugln("Handling request:", string(reqEnc))
 
@@ -168,7 +171,7 @@ func (o Origin) handleRequest(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	token, err := pat.UnmarshalToken(tokenValue)
+	token, err := type3.UnmarshalToken(tokenValue)
 	if err != nil {
 		log.Debugln("Failed decoding Token")
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
@@ -193,7 +196,7 @@ func (o Origin) handleRequest(w http.ResponseWriter, req *http.Request) {
 
 	authInput := token.AuthenticatorInput()
 	key := o.rateLimitedTokenKey
-	if challenge.TokenType == pat.BasicPublicTokenType {
+	if challenge.TokenType == type2.BasicPublicTokenType {
 		key = o.basicValidationKey
 	}
 
@@ -278,21 +281,21 @@ func startOrigin(c *cli.Context) error {
 	var rateLimitedTokenKey *rsa.PublicKey
 	for i := 0; i < len(issuerConfig.TokenKeys); i++ {
 		switch issuerConfig.TokenKeys[i].TokenType {
-		case int(pat.BasicPublicTokenType):
+		case int(type2.BasicPublicTokenType):
 			basicValidationKeyEnc, err = base64.URLEncoding.DecodeString(issuerConfig.TokenKeys[i].TokenKey)
 			if err != nil {
 				log.Fatal(err)
 			}
-			basicValidationKey, err = pat.UnmarshalTokenKey(basicValidationKeyEnc)
+			basicValidationKey, err = util.UnmarshalTokenKey(basicValidationKeyEnc)
 			if err != nil {
 				log.Fatal(err)
 			}
-		case int(pat.RateLimitedTokenType):
+		case int(type3.RateLimitedTokenType):
 			rateLimitedTokenKeyEnc, err = base64.URLEncoding.DecodeString(issuerConfig.TokenKeys[i].TokenKey)
 			if err != nil {
 				log.Fatal(err)
 			}
-			rateLimitedTokenKey, err = pat.UnmarshalTokenKey(rateLimitedTokenKeyEnc)
+			rateLimitedTokenKey, err = util.UnmarshalTokenKey(rateLimitedTokenKeyEnc)
 			if err != nil {
 				log.Fatal(err)
 			}
@@ -317,7 +320,7 @@ func startOrigin(c *cli.Context) error {
 		rateLimitedTokenKey:    rateLimitedTokenKey,
 		basicTokenKeyEnc:       basicValidationKeyEnc,
 		basicValidationKey:     basicValidationKey,
-		challenges:             make(map[string][]pat.TokenChallenge),
+		challenges:             make(map[string][]tokens.TokenChallenge),
 		challengeLock:          sync.Mutex{},
 	}
 

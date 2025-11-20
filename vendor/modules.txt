@@ -1,55 +1,54 @@
-# git.schwanenlied.me/yawning/x448.git v0.0.0-20170617130356-01b048fb03d6
-## explicit
-git.schwanenlied.me/yawning/x448.git
 # github.com/bwesterb/go-ristretto v1.2.3
 ## explicit; go 1.13
 github.com/bwesterb/go-ristretto
 github.com/bwesterb/go-ristretto/edwards25519
-# github.com/cisco/go-hpke v0.0.0-20210524174249-dd22b38cf960
-## explicit; go 1.14
-github.com/cisco/go-hpke
-# github.com/cisco/go-tls-syntax v0.0.0-20200617162716-46b0cfb76b9b
-## explicit; go 1.14
-github.com/cisco/go-tls-syntax
 # github.com/cloudflare/circl v1.6.1
 ## explicit; go 1.22.0
-github.com/cloudflare/circl/blindsign
 github.com/cloudflare/circl/blindsign/blindrsa
 github.com/cloudflare/circl/blindsign/blindrsa/internal/common
 github.com/cloudflare/circl/blindsign/blindrsa/internal/keys
-github.com/cloudflare/circl/dh/sidh
-github.com/cloudflare/circl/dh/sidh/internal/common
-github.com/cloudflare/circl/dh/sidh/internal/p434
-github.com/cloudflare/circl/dh/sidh/internal/p503
-github.com/cloudflare/circl/dh/sidh/internal/p751
+github.com/cloudflare/circl/dh/x25519
+github.com/cloudflare/circl/dh/x448
 github.com/cloudflare/circl/ecc/p384
 github.com/cloudflare/circl/expander
 github.com/cloudflare/circl/group
+github.com/cloudflare/circl/hpke
 github.com/cloudflare/circl/internal/conv
 github.com/cloudflare/circl/internal/sha3
+github.com/cloudflare/circl/kem
+github.com/cloudflare/circl/kem/kyber/kyber768
+github.com/cloudflare/circl/kem/mlkem/mlkem768
+github.com/cloudflare/circl/kem/xwing
 github.com/cloudflare/circl/math
+github.com/cloudflare/circl/math/fp25519
+github.com/cloudflare/circl/math/fp448
 github.com/cloudflare/circl/oprf
+github.com/cloudflare/circl/pke/kyber/internal/common
+github.com/cloudflare/circl/pke/kyber/internal/common/params
+github.com/cloudflare/circl/pke/kyber/kyber768
+github.com/cloudflare/circl/pke/kyber/kyber768/internal
 github.com/cloudflare/circl/simd/keccakf1600
 github.com/cloudflare/circl/xof
 github.com/cloudflare/circl/xof/k12
 github.com/cloudflare/circl/zk/dleq
-# github.com/cloudflare/pat-go v0.0.0-20230328025027-11579ba5b0b9
-## explicit; go 1.15
-github.com/cloudflare/pat-go
+# github.com/cloudflare/pat-go v0.0.0-20251120222733-a6755faf1d44
+## explicit; go 1.24.0
 github.com/cloudflare/pat-go/ecdsa
-# github.com/cpuguy83/go-md2man/v2 v2.0.0-20190314233015-f79a8a8ca69d
+github.com/cloudflare/pat-go/tokens
+github.com/cloudflare/pat-go/tokens/private
+github.com/cloudflare/pat-go/tokens/type2
+github.com/cloudflare/pat-go/tokens/type3
+github.com/cloudflare/pat-go/util
+# github.com/cpuguy83/go-md2man/v2 v2.0.7
 ## explicit; go 1.12
 github.com/cpuguy83/go-md2man/v2/md2man
-# github.com/russross/blackfriday/v2 v2.0.1
+# github.com/russross/blackfriday/v2 v2.1.0
 ## explicit
 github.com/russross/blackfriday/v2
-# github.com/shurcooL/sanitized_anchor_name v1.0.0
-## explicit
-github.com/shurcooL/sanitized_anchor_name
-# github.com/sirupsen/logrus v1.8.1
+# github.com/sirupsen/logrus v1.9.3
 ## explicit; go 1.13
 github.com/sirupsen/logrus
-# github.com/urfave/cli v1.22.5
+# github.com/urfave/cli v1.22.17
 ## explicit; go 1.11
 github.com/urfave/cli
 # golang.org/x/crypto v0.45.0
@@ -60,7 +59,6 @@ golang.org/x/crypto/chacha20
 golang.org/x/crypto/chacha20poly1305
 golang.org/x/crypto/cryptobyte
 golang.org/x/crypto/cryptobyte/asn1
-golang.org/x/crypto/curve25519
 golang.org/x/crypto/hkdf
 golang.org/x/crypto/internal/alias
 golang.org/x/crypto/internal/poly1305

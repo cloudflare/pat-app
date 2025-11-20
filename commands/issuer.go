@@ -12,7 +12,8 @@ import (
 	"net/http/httputil"
 	"strconv"
 
-	pat "github.com/cloudflare/pat-go"
+	"github.com/cloudflare/pat-go/tokens/type2"
+	"github.com/cloudflare/pat-go/tokens/type3"
 	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 )
@@ -47,8 +48,8 @@ type IssuerConfig struct {
 type Issuer struct {
 	name              string
 	debug             bool
-	rateLimitedIssuer *pat.RateLimitedIssuer
-	basicIssuer       *pat.BasicPublicIssuer
+	rateLimitedIssuer *type3.RateLimitedIssuer
+	basicIssuer       *type2.BasicPublicIssuer
 }
 
 func (i Issuer) dumpRequest(label string, w http.ResponseWriter, req *http.Request) error {
@@ -95,11 +96,11 @@ func (i Issuer) handleConfigRequest(w http.ResponseWriter, req *http.Request) {
 
 	tokenKeys := make([]IssuerTokenKey, 0)
 	tokenKeys = append(tokenKeys, IssuerTokenKey{
-		TokenType: int(pat.BasicPublicTokenType),
+		TokenType: int(type2.BasicPublicTokenType),
 		TokenKey:  base64.URLEncoding.EncodeToString(basicTokenKeyEnc),
 	})
 	tokenKeys = append(tokenKeys, IssuerTokenKey{
-		TokenType: int(pat.RateLimitedTokenType),
+		TokenType: int(type3.RateLimitedTokenType),
 		TokenKey:  base64.URLEncoding.EncodeToString(rateLimitedTokenKeyEnc),
 	})
 
@@ -151,8 +152,8 @@ func (i Issuer) handleIssuanceRequest(w http.ResponseWriter, req *http.Request) 
 	}
 
 	tokenType := binary.BigEndian.Uint16(body)
-	if tokenType == pat.RateLimitedTokenType {
-		var tokenRequest pat.RateLimitedTokenRequest
+	if tokenType == type3.RateLimitedTokenType {
+		var tokenRequest type3.RateLimitedTokenRequest
 		if !tokenRequest.Unmarshal(body) {
 			log.Debugln("Failed decoding token request")
 			w.Header().Set("Connection", "close")
@@ -160,7 +161,7 @@ func (i Issuer) handleIssuanceRequest(w http.ResponseWriter, req *http.Request) 
 			return
 		}
 
-		tokenResponse, blindRequest, err := i.rateLimitedIssuer.Evaluate(&tokenRequest)
+		tokenResponse, blindRequest, err := i.rateLimitedIssuer.Evaluate(body)
 		if err != nil {
 			log.Debugln("Token evaluation failed:", err)
 			w.Header().Set("Connection", "close")
@@ -173,8 +174,8 @@ func (i Issuer) handleIssuanceRequest(w http.ResponseWriter, req *http.Request) 
 		w.Header().Set(headerTokenLimit, strconv.Itoa(defaultOriginTokenLimit))
 		w.Header().Set(headerTokenOrigin, marshalStructuredBinary(blindRequest))
 		w.Write(tokenResponse)
-	} else if tokenType == pat.BasicPublicTokenType {
-		var tokenRequest pat.BasicPublicTokenRequest
+	} else if tokenType == type2.BasicPublicTokenType {
+		var tokenRequest type2.BasicPublicTokenRequest
 		if !tokenRequest.Unmarshal(body) {
 			log.Debugln("Failed decoding token request")
 			w.Header().Set("Connection", "close")
@@ -227,8 +228,8 @@ func startIssuer(c *cli.Context) error {
 		return err
 	}
 
-	basicIssuer := pat.NewBasicPublicIssuer(tokenKey)
-	rateLimitedIssuer := pat.NewRateLimitedIssuer(tokenKey)
+	basicIssuer := type2.NewBasicPublicIssuer(tokenKey)
+	rateLimitedIssuer := type3.NewRateLimitedIssuer(tokenKey)
 	origins := c.StringSlice("origins")
 	if len(origins) > 0 {
 		for _, origin := range origins {

@@ -12,13 +12,14 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/cloudflare/pat-go"
+	"github.com/cloudflare/pat-go/tokens/type2"
+	"github.com/cloudflare/pat-go/tokens/type3"
 	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 	"golang.org/x/crypto/hkdf"
 )
 
-func visit(rateLimitedClient pat.RateLimitedClient, basicClient pat.BasicPublicClient, id string, clientOriginSecret []byte, origin, attester, resourceURI string, nonInteractive, crossOrigin bool, tokenType uint16, tokenCount int) error {
+func visit(rateLimitedClient type3.RateLimitedClient, basicClient type2.BasicPublicClient, id string, clientOriginSecret []byte, origin, attester, resourceURI string, nonInteractive, crossOrigin bool, tokenType uint16, tokenCount int) error {
 	tokenStore := EmptyStore()
 
 	req, err := http.NewRequest(http.MethodGet, resourceURI, nil)
@@ -91,7 +92,7 @@ func visit(rateLimitedClient pat.RateLimitedClient, basicClient pat.BasicPublicC
 				tokenChallenges = append(tokenChallenges, challengeEnc)
 
 				tokenType := binary.BigEndian.Uint16(challengeBlob)
-				if tokenType == pat.RateLimitedTokenType {
+				if tokenType == type3.RateLimitedTokenType {
 					log.Debugln("Fetching rate-limited token...")
 					token, err := fetchRateLimitedToken(rateLimitedClient, clientOriginSecret, id, attester, origin, challengeBlob, tokenKeyEnc)
 					if err != nil {
@@ -168,8 +169,8 @@ func runRunner(c *cli.Context) error {
 		panic(err)
 	}
 
-	rateLimitedClient := pat.NewRateLimitedClientFromSecret(clientRequestSecret)
-	basicClient := pat.NewBasicPublicClient()
+	rateLimitedClient := type3.NewRateLimitedClientFromSecret(clientRequestSecret)
+	basicClient := type2.NewBasicPublicClient()
 	resourceURI, err := composeURL(origin, resource)
 	if err != nil {
 		return err
@@ -182,49 +183,49 @@ func runRunner(c *cli.Context) error {
 		tokenCount     int
 	}{
 		{
-			tokenType:      pat.BasicPublicTokenType,
+			tokenType:      type2.BasicPublicTokenType,
 			nonInteractive: true,
 			crossOrigin:    true,
 			tokenCount:     1,
 		},
 		{
-			tokenType:      pat.BasicPublicTokenType,
+			tokenType:      type2.BasicPublicTokenType,
 			nonInteractive: false,
 			crossOrigin:    true,
 			tokenCount:     1,
 		},
 		{
-			tokenType:      pat.BasicPublicTokenType,
+			tokenType:      type2.BasicPublicTokenType,
 			nonInteractive: true,
 			crossOrigin:    false,
 			tokenCount:     1,
 		},
 		{
-			tokenType:      pat.BasicPublicTokenType,
+			tokenType:      type2.BasicPublicTokenType,
 			nonInteractive: false,
 			crossOrigin:    false,
 			tokenCount:     1,
 		},
 		{
-			tokenType:      pat.RateLimitedTokenType,
+			tokenType:      type3.RateLimitedTokenType,
 			nonInteractive: true,
 			crossOrigin:    true,
 			tokenCount:     1,
 		},
 		{
-			tokenType:      pat.RateLimitedTokenType,
+			tokenType:      type3.RateLimitedTokenType,
 			nonInteractive: false,
 			crossOrigin:    true,
 			tokenCount:     1,
 		},
 		{
-			tokenType:      pat.RateLimitedTokenType,
+			tokenType:      type3.RateLimitedTokenType,
 			nonInteractive: true,
 			crossOrigin:    false,
 			tokenCount:     1,
 		},
 		{
-			tokenType:      pat.RateLimitedTokenType,
+			tokenType:      type3.RateLimitedTokenType,
 			nonInteractive: false,
 			crossOrigin:    false,
 			tokenCount:     1,
