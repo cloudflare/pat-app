@@ -4,16 +4,16 @@ import (
 	"os"
 	"testing"
 
-	"github.com/cloudflare/pat-go"
+	"github.com/cloudflare/pat-go/tokens"
 )
 
-func createEmptyToken() pat.Token {
-	return pat.Token{
+func createEmptyToken() tokens.Token {
+	return tokens.Token{
 		TokenType:     0x0003,
 		Nonce:         make([]byte, 32),
 		Context:       make([]byte, 32),
 		KeyID:         make([]byte, 32),
-		Authenticator: make([]byte, 512),
+		Authenticator: make([]byte, 256),
 	}
 }
 

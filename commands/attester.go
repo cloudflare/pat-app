@@ -2,7 +2,6 @@ package commands
 
 import (
 	"bytes"
-	"crypto/elliptic"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
@@ -11,9 +10,8 @@ import (
 	"net/http/httputil"
 	"strconv"
 
-	"github.com/cloudflare/pat-go/ecdsa"
-
-	pat "github.com/cloudflare/pat-go"
+	"github.com/cloudflare/pat-go/tokens/type2"
+	"github.com/cloudflare/pat-go/tokens/type3"
 	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 )
@@ -38,7 +36,7 @@ type ClientState struct {
 
 type TestAttester struct {
 	client      *http.Client
-	attester    *pat.RateLimitedAttester
+	attester    *type3.RateLimitedAttester
 	clientState map[string]ClientState
 }
 
@@ -51,21 +49,21 @@ func parseStructuredBinaryHeader(req *http.Request, header string) ([]byte, erro
 }
 
 type MemoryClientStateCache struct {
-	cache map[string]*pat.ClientState
+	cache map[string]*type3.ClientState
 }
 
 func NewMemoryClientStateCache() MemoryClientStateCache {
 	return MemoryClientStateCache{
-		cache: make(map[string]*pat.ClientState),
+		cache: make(map[string]*type3.ClientState),
 	}
 }
 
-func (c MemoryClientStateCache) Get(clientID string) (*pat.ClientState, bool) {
+func (c MemoryClientStateCache) Get(clientID string) (*type3.ClientState, bool) {
 	state, ok := c.cache[clientID]
 	return state, ok
 }
 
-func (c MemoryClientStateCache) Put(clientID string, state *pat.ClientState) {
+func (c MemoryClientStateCache) Put(clientID string, state *type3.ClientState) {
 	c.cache[clientID] = state
 }
 
@@ -120,8 +118,8 @@ func (a TestAttester) handleAttestationRequest(w http.ResponseWriter, req *http.
 	tokenReq.Header.Set("Content-Type", tokenRequestMediaType)
 
 	tokenType := binary.BigEndian.Uint16(requestBody)
-	if tokenType == pat.RateLimitedTokenType {
-		var rateLimitedTokenRequest pat.RateLimitedTokenRequest
+	if tokenType == type3.RateLimitedTokenType {
+		var rateLimitedTokenRequest type3.RateLimitedTokenRequest
 		if !rateLimitedTokenRequest.Unmarshal(requestBody) {
 			log.Println("Failed parsing client TokenRequest", err)
 			http.Error(w, "Failed parsing client TokenRequest", 400)
@@ -153,32 +151,14 @@ func (a TestAttester) handleAttestationRequest(w http.ResponseWriter, req *http.
 			clientID = "default"
 		}
 
-		var tokenRequest pat.RateLimitedTokenRequest
+		var tokenRequest type3.RateLimitedTokenRequest
 		if !tokenRequest.Unmarshal(requestBody) {
 			log.Println("Failed decoding client request body:", err)
 			http.Error(w, err.Error(), 400)
 			return
 		}
 
-		// XXX(caw): the pat-go interface for VerifyRequest and FinalizeIndex is wildly inconsistent. One accepts
-		// encoded byte arrays, whereas the other accepts decoded things of a specific type (public and private keys
-		// and whatnot). Pick one!
-
-		// Deserialize the request key
-		curve := elliptic.P384()
-		x, y := elliptic.UnmarshalCompressed(curve, clientKeyEnc)
-		clientKey := &ecdsa.PublicKey{
-			curve, x, y,
-		}
-
-		blindKey, err := ecdsa.CreateKey(elliptic.P384(), requestBlind)
-		if err != nil {
-			log.Println("Invalid client blind")
-			http.Error(w, "Invalid client blind", 400)
-			return
-		}
-
-		err = a.attester.VerifyRequest(tokenRequest, blindKey, clientKey, anonOrigin)
+		err = a.attester.VerifyRequest(tokenRequest, requestBlind, clientKeyEnc, anonOrigin)
 		if err != nil {
 			log.Println("Invalid request (signature verification failed)")
 			http.Error(w, "Invalid request (signature verification failed)", 400)
@@ -284,7 +264,7 @@ func (a TestAttester) handleAttestationRequest(w http.ResponseWriter, req *http.
 
 		w.Header().Set("content-type", tokenResponseMediaType)
 		w.Write(blindSignature)
-	} else if tokenType == pat.BasicPublicTokenType {
+	} else if tokenType == type2.BasicPublicTokenType {
 		tokenReqEnc, _ := httputil.DumpRequest(tokenReq, false)
 		log.Println("Forwarding attestation token request:", string(tokenReqEnc))
 
@@ -332,7 +312,7 @@ func startAttester(c *cli.Context) error {
 
 	attester := TestAttester{
 		client:      &http.Client{},
-		attester:    pat.NewRateLimitedAttester(NewMemoryClientStateCache()),
+		attester:    type3.NewRateLimitedAttester(NewMemoryClientStateCache()),
 		clientState: make(map[string]ClientState),
 	}
 

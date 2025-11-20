@@ -7,7 +7,8 @@ import (
 	"errors"
 	"io/ioutil"
 
-	pat "github.com/cloudflare/pat-go"
+	"github.com/cloudflare/pat-go/tokens"
+	"github.com/cloudflare/pat-go/tokens/type2"
 )
 
 var (
@@ -15,7 +16,7 @@ var (
 )
 
 type TokenStore struct {
-	store map[string][]pat.Token
+	store map[string][]tokens.Token
 }
 
 func (s *TokenStore) String() string {
@@ -70,26 +71,26 @@ func (s *TokenStore) Equals(o *TokenStore) bool {
 	return true
 }
 
-func (s *TokenStore) AddToken(challenge string, token pat.Token) {
+func (s *TokenStore) AddToken(challenge string, token tokens.Token) {
 	_, ok := s.store[challenge]
 	if !ok {
-		s.store[challenge] = []pat.Token{}
+		s.store[challenge] = []tokens.Token{}
 	}
 	s.store[challenge] = append(s.store[challenge], token)
 }
 
-func (s *TokenStore) Token(challenge string) (pat.Token, error) {
+func (s *TokenStore) Token(challenge string) (tokens.Token, error) {
 	tokenList, ok := s.store[challenge]
 	if !ok {
-		return pat.Token{}, ErrNoMatchingToken
+		return tokens.Token{}, ErrNoMatchingToken
 	}
 	return tokenList[0], nil
 }
 
-func (s *TokenStore) ConsumeToken(challenge string) (pat.Token, error) {
+func (s *TokenStore) ConsumeToken(challenge string) (tokens.Token, error) {
 	tokenList, ok := s.store[challenge]
 	if !ok {
-		return pat.Token{}, ErrNoMatchingToken
+		return tokens.Token{}, ErrNoMatchingToken
 	}
 	token := tokenList[0]
 	s.store[challenge] = s.store[challenge][1:]
@@ -126,7 +127,7 @@ func (s *TokenStore) WriteToFile(fname string) error {
 
 func EmptyStore() *TokenStore {
 	return &TokenStore{
-		store: make(map[string][]pat.Token),
+		store: make(map[string][]tokens.Token),
 	}
 }
 
@@ -142,7 +143,7 @@ func ReadStoreFromFile(fname string) (*TokenStore, error) {
 		return nil, err
 	}
 
-	tokenMap := make(map[string][]pat.Token)
+	tokenMap := make(map[string][]tokens.Token)
 	for c, l := range data {
 		for _, t := range l {
 			tokenEnc, err := hex.DecodeString(t)
@@ -150,7 +151,7 @@ func ReadStoreFromFile(fname string) (*TokenStore, error) {
 				return nil, err
 			}
 
-			token, err := pat.UnmarshalToken(tokenEnc)
+			token, err := type2.UnmarshalToken(tokenEnc)
 			if err != nil {
 				return nil, err
 			}

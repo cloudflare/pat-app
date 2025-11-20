@@ -18,7 +18,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/cloudflare/pat-go"
+	"github.com/cloudflare/pat-go/tokens"
+	"github.com/cloudflare/pat-go/tokens/type2"
+	"github.com/cloudflare/pat-go/tokens/type3"
 	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 	"golang.org/x/crypto/hkdf"
@@ -45,21 +47,21 @@ func fetchIssuerConfig(issuer string) (IssuerConfig, error) {
 	return issuerConfig, nil
 }
 
-func fetchIssuerNameKey(nameKeyURI string) (pat.EncapKey, error) {
+func fetchIssuerNameKey(nameKeyURI string) (type3.EncapKey, error) {
 	resp, err := http.Get(nameKeyURI)
 	if err != nil {
-		return pat.EncapKey{}, err
+		return type3.EncapKey{}, err
 	}
 	defer resp.Body.Close()
 
 	nameKeyEnc, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return pat.EncapKey{}, err
+		return type3.EncapKey{}, err
 	}
 
-	nameKey, err := pat.UnmarshalEncapKey(nameKeyEnc)
+	nameKey, err := type3.UnmarshalEncapKey(nameKeyEnc)
 	if err != nil {
-		return pat.EncapKey{}, err
+		return type3.EncapKey{}, err
 	}
 
 	return nameKey, nil
@@ -72,40 +74,40 @@ func computeAnonymousOrigin(secret []byte, origin string) ([]byte, error) {
 	return originID, err
 }
 
-func fetchBasicToken(client pat.BasicPublicClient, attester string, challenge []byte, publicKeyEnc []byte) (pat.Token, error) {
+func fetchBasicToken(client type2.BasicPublicClient, attester string, challenge []byte, publicKeyEnc []byte) (tokens.Token, error) {
 	nonce := make([]byte, 32)
 	rand.Reader.Read(nonce)
 
 	tokenKeyID := sha256.Sum256(publicKeyEnc)
 	publicKey, err := unmarshalTokenKey(publicKeyEnc)
 	if err != nil {
-		return pat.Token{}, err
+		return tokens.Token{}, err
 	}
 
-	tokenChallenge, err := pat.UnmarshalTokenChallenge(challenge)
+	tokenChallenge, err := tokens.UnmarshalTokenChallenge(challenge)
 	if err != nil {
-		return pat.Token{}, err
+		return tokens.Token{}, err
 	}
 
 	issuerConfig, err := fetchIssuerConfig(tokenChallenge.IssuerName)
 	if err != nil {
-		return pat.Token{}, err
+		return tokens.Token{}, err
 	}
 
 	tokenRequestState, err := client.CreateTokenRequest(challenge, nonce, tokenKeyID[:], publicKey)
 	if err != nil {
-		return pat.Token{}, err
+		return tokens.Token{}, err
 	}
 	tokenRequestEnc := tokenRequestState.Request().Marshal()
 
 	requestURI, err := composeURL(tokenChallenge.IssuerName, issuerConfig.RequestURI)
 	if err != nil {
-		return pat.Token{}, err
+		return tokens.Token{}, err
 	}
 
 	req, err := http.NewRequest(http.MethodPost, requestURI, bytes.NewBuffer(tokenRequestEnc))
 	if err != nil {
-		return pat.Token{}, err
+		return tokens.Token{}, err
 	}
 	req.Header.Set("Content-Type", tokenRequestMediaType)
 
@@ -115,10 +117,10 @@ func fetchBasicToken(client pat.BasicPublicClient, attester string, challenge []
 	httpClient := &http.Client{}
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return pat.Token{}, err
+		return tokens.Token{}, err
 	}
 	if resp.StatusCode != 200 {
-		return pat.Token{}, fmt.Errorf("Request failed with error %d", resp.StatusCode)
+		return tokens.Token{}, fmt.Errorf("Request failed with error %d", resp.StatusCode)
 	}
 	defer resp.Body.Close()
 
@@ -127,13 +129,13 @@ func fetchBasicToken(client pat.BasicPublicClient, attester string, challenge []
 
 	tokenResponse, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return pat.Token{}, err
+		return tokens.Token{}, err
 	}
 
 	return tokenRequestState.FinalizeToken(tokenResponse)
 }
 
-func fetchRateLimitedToken(client pat.RateLimitedClient, clientOriginSecret []byte, clientID string, attester string, origin string, challenge []byte, publicKeyEnc []byte) (pat.Token, error) {
+func fetchRateLimitedToken(client type3.RateLimitedClient, clientOriginSecret []byte, clientID string, attester string, origin string, challenge []byte, publicKeyEnc []byte) (tokens.Token, error) {
 	blind := make([]byte, 32)
 	rand.Reader.Read(blind)
 
@@ -143,56 +145,56 @@ func fetchRateLimitedToken(client pat.RateLimitedClient, clientOriginSecret []by
 	tokenKeyID := sha256.Sum256(publicKeyEnc)
 	publicKey, err := unmarshalTokenKey(publicKeyEnc)
 	if err != nil {
-		return pat.Token{}, err
+		return tokens.Token{}, err
 	}
 
-	tokenChallenge, err := pat.UnmarshalTokenChallenge(challenge)
+	tokenChallenge, err := tokens.UnmarshalTokenChallenge(challenge)
 	if err != nil {
-		return pat.Token{}, err
+		return tokens.Token{}, err
 	}
 
 	issuerConfig, err := fetchIssuerConfig(tokenChallenge.IssuerName)
 	if err != nil {
-		return pat.Token{}, err
+		return tokens.Token{}, err
 	}
 
 	issuerNameKeyURI, err := composeURL(tokenChallenge.IssuerName, issuerConfig.IssuerEncapKeyURI)
 	if err != nil {
-		return pat.Token{}, err
+		return tokens.Token{}, err
 	}
 	originNameKey, err := fetchIssuerNameKey(issuerNameKeyURI)
 	if err != nil {
-		return pat.Token{}, err
+		return tokens.Token{}, err
 	}
 
 	tokenRequestState, err := client.CreateTokenRequest(challenge, nonce, blind, tokenKeyID[:], publicKey, origin, originNameKey)
 	if err != nil {
-		return pat.Token{}, err
+		return tokens.Token{}, err
 	}
 	tokenRequestEnc := tokenRequestState.Request().Marshal()
 
 	anonymousOriginID, err := computeAnonymousOrigin(clientOriginSecret, origin)
 	if err != nil {
-		return pat.Token{}, err
+		return tokens.Token{}, err
 	}
 
 	issuerName, err := composeURL(tokenChallenge.IssuerName, issuerConfig.RequestURI)
 	if err != nil {
-		return pat.Token{}, err
+		return tokens.Token{}, err
 	}
 	issuerUrl, err := url.Parse(issuerName)
 	if err != nil {
-		return pat.Token{}, err
+		return tokens.Token{}, err
 	}
 
 	tokenRequestURI, err := composeURL(attester, "/token-request")
 	if err != nil {
-		return pat.Token{}, err
+		return tokens.Token{}, err
 	}
 
 	req, err := http.NewRequest(http.MethodPost, tokenRequestURI, bytes.NewBuffer(tokenRequestEnc))
 	if err != nil {
-		return pat.Token{}, err
+		return tokens.Token{}, err
 	}
 	q := req.URL.Query()
 	q.Add("issuer", issuerUrl.Host)
@@ -212,10 +214,10 @@ func fetchRateLimitedToken(client pat.RateLimitedClient, clientOriginSecret []by
 	httpClient := &http.Client{}
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return pat.Token{}, err
+		return tokens.Token{}, err
 	}
 	if resp.StatusCode != 200 {
-		return pat.Token{}, fmt.Errorf("Request failed with error %d", resp.StatusCode)
+		return tokens.Token{}, fmt.Errorf("Request failed with error %d", resp.StatusCode)
 	}
 	defer resp.Body.Close()
 
@@ -224,7 +226,7 @@ func fetchRateLimitedToken(client pat.RateLimitedClient, clientOriginSecret []by
 
 	tokenResponse, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return pat.Token{}, err
+		return tokens.Token{}, err
 	}
 
 	return tokenRequestState.FinalizeToken(tokenResponse)
@@ -289,8 +291,8 @@ func runClientFetch(c *cli.Context) error {
 		}
 	}
 
-	rateLimitedClient := pat.NewRateLimitedClientFromSecret(clientRequestSecret)
-	basicClient := pat.NewBasicPublicClient()
+	rateLimitedClient := type3.NewRateLimitedClientFromSecret(clientRequestSecret)
+	basicClient := type2.NewBasicPublicClient()
 
 	resourceURI, err := composeURL(origin, resource)
 	if err != nil {
@@ -309,10 +311,10 @@ func runClientFetch(c *cli.Context) error {
 		req.Header.Add(headerTokenAttributeCrossOrigin, "true")
 	}
 	if tokenType == "basic" {
-		req.Header.Add(headerTokenType, strconv.Itoa(int(pat.BasicPublicTokenType)))
+		req.Header.Add(headerTokenType, strconv.Itoa(int(type2.BasicPublicTokenType)))
 	}
 	if tokenType == "rate-limited" {
-		req.Header.Add(headerTokenType, strconv.Itoa(int(pat.RateLimitedTokenType)))
+		req.Header.Add(headerTokenType, strconv.Itoa(int(type3.RateLimitedTokenType)))
 	}
 	req.Header.Add(headerTokenAttributeChallengeCount, strconv.Itoa(tokenCount))
 	resp, err := httpClient.Do(req)
@@ -379,7 +381,7 @@ func runClientFetch(c *cli.Context) error {
 				tokenChallenges = append(tokenChallenges, challengeEnc)
 
 				tokenType := binary.BigEndian.Uint16(challengeBlob)
-				if tokenType == pat.RateLimitedTokenType {
+				if tokenType == type3.RateLimitedTokenType {
 					log.Debugln("Fetching rate-limited token...")
 					token, err := fetchRateLimitedToken(rateLimitedClient, clientOriginSecret, id, attester, origin, challengeBlob, tokenKeyEnc)
 					if err != nil {
