@@ -3,7 +3,7 @@ module github.com/cloudflare/pat-app
 go 1.24.0
 
 require (
-	github.com/cloudflare/circl v1.6.1
+	github.com/cloudflare/circl v1.6.3
 	github.com/cloudflare/pat-go v0.0.0-20230328025027-11579ba5b0b9
 	github.com/sirupsen/logrus v1.8.3
 	github.com/urfave/cli v1.22.5
